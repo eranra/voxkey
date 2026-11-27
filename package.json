@@ -46,11 +46,11 @@
     "build:injector": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /target:exe /out:bin\\injector.exe native\\injector.cs"
   },
   "dependencies": {
-    "electron-updater": "6.8.10",
+    "electron-updater": "6.8.11",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "44.9.0",
-    "electron-builder": "26.17.0"
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
   }
 }
