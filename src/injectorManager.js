@@ -1,22 +1,68 @@
-const { spawn } = require('child_process');
+const childProcess = require('child_process');
 const fs = require('fs');
 const { PATHS } = require('./config');
 
+/** macOS virtual key codes for the special keys VoxKey sends. */
+const MAC_KEY_SCRIPTS = Object.freeze({
+  BACKSPACE: 'key code 51',
+  ENTER: 'key code 36',
+  SPACE: 'keystroke " "',
+  TAB: 'key code 48',
+  ESCAPE: 'key code 53'
+});
+
+/** AppleScript to press one special key, or null for an unknown key. */
+function macKeyScript(keyName) {
+  const action = MAC_KEY_SCRIPTS[String(keyName).toUpperCase()];
+  return action ? `tell application "System Events" to ${action}` : null;
+}
+
+/** Escapes text for an AppleScript string literal. */
+function appleScriptString(text) {
+  return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * How to type `text` on macOS.
+ * System Events `keystroke` only types characters that exist on the current keyboard layout,
+ * so printable ASCII is typed directly and everything else (Hebrew, Arabic, Chinese, emoji,
+ * new lines) is pasted through the clipboard.
+ */
+function macTextPlan(text) {
+  if (/^[\x20-\x7E]*$/.test(text)) {
+    return { method: 'keystroke', script: `tell application "System Events" to keystroke ${appleScriptString(text)}` };
+  }
+  return { method: 'paste', script: 'tell application "System Events" to keystroke "v" using command down' };
+}
+
+/** Milliseconds to wait after a paste before the old clipboard text is put back. */
+const CLIPBOARD_RESTORE_MS = 300;
+
+/**
+ * Types text and keys into the app that has keyboard focus.
+ * - Windows: a long-running helper (bin/injector.exe, built from native/injector.cs) reads commands on stdin.
+ * - macOS: AppleScript through `osascript`. Needs Accessibility permission.
+ */
 class InjectorManager {
-  constructor(injectorPath = PATHS.injector) {
+  constructor(injectorPath = PATHS.injector, deps = {}) {
     this.injectorPath = injectorPath;
+    this.platform = deps.platform || process.platform;
+    this.spawn = deps.spawn || childProcess.spawn;
+    this.clipboard = deps.clipboard || null;
     this.process = null;
     this.isStopping = false;
+    // macOS commands run one after another, so fast key presses arrive in order.
+    this.macQueue = Promise.resolve();
   }
 
   start() {
-    if (process.platform !== 'win32' || !fs.existsSync(this.injectorPath)) {
+    if (this.platform !== 'win32' || !fs.existsSync(this.injectorPath)) {
       return false;
     }
 
     try {
       this.isStopping = false;
-      this.process = spawn(this.injectorPath, [], {
+      this.process = this.spawn(this.injectorPath, [], {
         stdio: ['pipe', 'ignore', 'ignore'],
         windowsHide: true
       });
@@ -36,52 +82,89 @@ class InjectorManager {
     }
   }
 
-  sendText(text) {
-    if (!text) return;
-
-    if (process.platform === 'win32') {
-      if (this.process && this.process.stdin && this.process.stdin.writable) {
-        this.process.stdin.write(`TEXT:${text}\n`);
-      } else {
-        // Fallback: one-off execution
-        spawn(this.injectorPath, ['--text', text], { windowsHide: true });
-      }
-    } else if (process.platform === 'darwin') {
-      const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escaped}"`]);
+  /** Sends one command line to the Windows helper, or runs it once with `fallbackArgs`. */
+  sendWindows(line, fallbackArgs) {
+    if (this.process && this.process.stdin && this.process.stdin.writable) {
+      this.process.stdin.write(`${line}\n`);
+    } else {
+      this.spawn(this.injectorPath, fallbackArgs, { windowsHide: true });
     }
   }
 
-  sendKey(keyName) {
-    if (!keyName) return;
+  /** Types text. On macOS, returns a promise that resolves when it has been typed. */
+  sendText(text) {
+    if (!text) return Promise.resolve();
 
-    if (process.platform === 'win32') {
-      if (this.process && this.process.stdin && this.process.stdin.writable) {
-        this.process.stdin.write(`KEY:${keyName}\n`);
-      } else {
-        spawn(this.injectorPath, ['--key', keyName], { windowsHide: true });
-      }
-    } else if (process.platform === 'darwin') {
-      const scriptMap = {
-        'BACKSPACE': 'key code 51',
-        'ENTER': 'key code 36',
-        'SPACE': 'keystroke " "',
-        'TAB': 'key code 48'
-      };
-      if (scriptMap[keyName]) {
-        spawn('osascript', ['-e', `tell application "System Events" to ${scriptMap[keyName]}`]);
-      }
+    if (this.platform === 'win32') {
+      // One command per line: a line break inside the text would end the command early.
+      const line = text.replace(/[\r\n]+/g, ' ');
+      this.sendWindows(`TEXT:${line}`, ['--text', line]);
+    } else if (this.platform === 'darwin') {
+      const plan = macTextPlan(text);
+      return plan.method === 'keystroke' ? this.runMac(plan.script) : this.pasteMac(text, plan.script);
     }
+    return Promise.resolve();
+  }
+
+  /** Presses one special key (BACKSPACE, ENTER, SPACE, TAB, ESCAPE). */
+  sendKey(keyName) {
+    if (!keyName) return Promise.resolve();
+
+    if (this.platform === 'win32') {
+      this.sendWindows(`KEY:${keyName}`, ['--key', keyName]);
+    } else if (this.platform === 'darwin') {
+      const script = macKeyScript(keyName);
+      if (script) return this.runMac(script);
+    }
+    return Promise.resolve();
   }
 
   hideBridgeWindow() {
-    if (process.platform === 'win32') {
-      if (this.process && this.process.stdin && this.process.stdin.writable) {
-        this.process.stdin.write('HIDE_BRIDGE\n');
-      } else {
-        spawn(this.injectorPath, ['--hide-bridge'], { windowsHide: true });
-      }
+    if (this.platform === 'win32') {
+      this.sendWindows('HIDE_BRIDGE', ['--hide-bridge']);
     }
+  }
+
+  /** Queues one AppleScript. Returns a promise that resolves when it has finished. */
+  runMac(script) {
+    this.macQueue = this.macQueue.then(() => this.osascript(script));
+    return this.macQueue;
+  }
+
+  /** Puts `text` on the clipboard, presses Cmd+V, then puts the old clipboard text back. */
+  pasteMac(text, pasteScript) {
+    const clipboard = this.clipboard;
+    if (!clipboard) {
+      console.warn('[InjectorManager] Clipboard not available; cannot type non-ASCII text.');
+      return this.macQueue;
+    }
+    this.macQueue = this.macQueue.then(async () => {
+      const previous = clipboard.readText();
+      clipboard.writeText(text);
+      await this.osascript(pasteScript);
+      await new Promise((r) => setTimeout(r, CLIPBOARD_RESTORE_MS));
+      // Only restore if nothing else changed the clipboard in the meantime.
+      if (clipboard.readText() === text) clipboard.writeText(previous);
+    });
+    return this.macQueue;
+  }
+
+  osascript(script) {
+    return new Promise((resolve) => {
+      let child;
+      try {
+        child = this.spawn('osascript', ['-e', script]);
+      } catch (err) {
+        console.warn('[InjectorManager] osascript failed:', err.message);
+        resolve();
+        return;
+      }
+      child.on('error', (err) => {
+        console.warn('[InjectorManager] osascript failed:', err.message);
+        resolve();
+      });
+      child.on('exit', () => resolve());
+    });
   }
 
   stop() {
@@ -100,5 +183,10 @@ class InjectorManager {
 }
 
 module.exports = {
-  InjectorManager
+  CLIPBOARD_RESTORE_MS,
+  InjectorManager,
+  MAC_KEY_SCRIPTS,
+  appleScriptString,
+  macKeyScript,
+  macTextPlan
 };

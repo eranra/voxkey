@@ -1,49 +1,74 @@
-const { Tray, Menu, nativeImage } = require('electron');
 const { PATHS, APP_VERSION } = require('./config');
 
+/**
+ * Builds the tray menu as plain data, so it can be tested without Electron.
+ * Each item is { label, command } | { label, enabled: false } | { label, checked, command } | { type: 'separator' }.
+ */
+function buildTrayMenuModel({ version = APP_VERSION, updateLabel = null, checkForUpdates = true } = {}) {
+  const separator = { type: 'separator' };
+  const top = updateLabel ? [{ label: updateLabel, command: 'update' }, separator] : [];
+  return [
+    ...top,
+    { label: `VoxKey v${version}`, enabled: false },
+    separator,
+    { label: 'Show / Hide Keyboard', command: 'toggleKeyboard' },
+    { label: 'Toggle Voice Typing (F8)', command: 'toggleVoice' },
+    separator,
+    { label: 'About VoxKey', command: 'about' },
+    { label: 'Check for Updates…', command: 'checkUpdates' },
+    { label: 'Check for Updates Automatically', type: 'checkbox', checked: checkForUpdates, command: 'toggleAutoUpdate' },
+    separator,
+    { label: 'Quit VoxKey', command: 'quit' }
+  ];
+}
+
+/** Turns the menu model into an Electron menu template. `run(command)` handles clicks. */
+function toMenuTemplate(model, run) {
+  return model.map((item) => {
+    if (item.type === 'separator') return { type: 'separator' };
+    const entry = { label: item.label };
+    if (item.enabled === false) entry.enabled = false;
+    if (item.type === 'checkbox') {
+      entry.type = 'checkbox';
+      entry.checked = item.checked;
+    }
+    if (item.command) entry.click = () => run(item.command);
+    return entry;
+  });
+}
+
+/** Tray icon size in points: 16 in the macOS menu bar, 16 in the Windows notification area. */
+const TRAY_ICON_SIZE = 16;
+
 class TrayManager {
-  constructor() {
+  constructor(electron = require('electron')) {
+    this.electron = electron;
     this.tray = null;
+    this.run = () => {};
   }
 
-  createTray(callbacks = {}) {
-    const onToggleKeyboard = callbacks.onToggleKeyboard || (() => {});
-    const onToggleVoice = callbacks.onToggleVoice || (() => {});
-    const onQuit = callbacks.onQuit || (() => {});
+  /** `run(command)` is called with the menu command names from `buildTrayMenuModel`. */
+  createTray(run, options = {}) {
+    const { Tray, nativeImage } = this.electron;
+    this.run = run;
 
-    let icon = nativeImage.createFromPath(PATHS.icon);
+    // The app icon is 1024 px. Without resizing, macOS shows it at full size in the menu bar.
+    const icon = nativeImage.createFromPath(PATHS.icon).resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
 
     this.tray = new Tray(icon);
     this.tray.setToolTip(`VoxKey v${APP_VERSION}\nPress F8 to dictate\nClick to Show/Hide`);
+    this.refresh(options);
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: `VoxKey v${APP_VERSION}`,
-        enabled: false
-      },
-      { type: 'separator' },
-      {
-        label: 'Show / Hide Keyboard',
-        click: () => onToggleKeyboard()
-      },
-      {
-        label: 'Toggle Voice Typing (F8)',
-        click: () => onToggleVoice()
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit VoxKey',
-        click: () => onQuit()
-      }
-    ]);
-
-    this.tray.setContextMenu(contextMenu);
-
-    this.tray.on('click', () => {
-      onToggleKeyboard();
-    });
-
+    this.tray.on('click', () => run('toggleKeyboard'));
     return this.tray;
+  }
+
+  /** Rebuilds the menu, for example when an update is found or a setting changes. */
+  refresh(options = {}) {
+    if (!this.tray) return;
+    const { Menu } = this.electron;
+    const template = toMenuTemplate(buildTrayMenuModel(options), this.run);
+    this.tray.setContextMenu(Menu.buildFromTemplate(template));
   }
 
   destroy() {
@@ -57,5 +82,8 @@ class TrayManager {
 }
 
 module.exports = {
+  buildTrayMenuModel,
+  toMenuTemplate,
+  TRAY_ICON_SIZE,
   TrayManager
 };

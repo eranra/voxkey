@@ -217,11 +217,16 @@ namespace VoxKey
                 return;
             }
 
-            // Stream mode: read commands continuously from standard input
-            string line;
-            while ((line = Console.ReadLine()) != null)
+            // Stream mode: read commands continuously from standard input.
+            // VoxKey (Node.js) writes UTF-8. Console.ReadLine() would decode with the console code page
+            // and garble non-English text, so read the raw stream as UTF-8.
+            using (var reader = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false)))
             {
-                ProcessCommand(line);
+                string line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    ProcessCommand(line);
+                }
             }
         }
     }

@@ -1,0 +1,42 @@
+const { describe, it } = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { DEFAULT_SETTINGS, normalizeSettings, SettingsStore } = require('../../src/store');
+
+describe('settings', () => {
+  it('defaults: check for updates, English', () => {
+    assert.deepStrictEqual(normalizeSettings(null), { ...DEFAULT_SETTINGS });
+    assert.strictEqual(DEFAULT_SETTINGS.checkForUpdates, true);
+  });
+
+  it('drops wrong types and unsafe values', () => {
+    const s = normalizeSettings({ checkForUpdates: 'yes', lastAnnouncedVersion: '<script>', language: '../../etc', extra: 1 });
+    assert.deepStrictEqual(s, { checkForUpdates: true, lastAnnouncedVersion: null, language: 'en-US' });
+    assert.strictEqual(normalizeSettings({ lastAnnouncedVersion: '0.3.0' }).lastAnnouncedVersion, '0.3.0');
+    assert.strictEqual(normalizeSettings({ language: 'he-IL' }).language, 'he-IL');
+  });
+
+  it('saves and loads from disk; a broken file gives the defaults', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'voxkey-store-'));
+    const file = path.join(dir, 'nested', 'settings.json');
+    try {
+      const store = new SettingsStore(file);
+      store.update({ checkForUpdates: false, language: 'fr-FR' });
+      assert.deepStrictEqual(new SettingsStore(file).get(), { checkForUpdates: false, lastAnnouncedVersion: null, language: 'fr-FR' });
+      assert.strictEqual(fs.existsSync(`${file}.tmp`), false);
+
+      fs.writeFileSync(file, '{ not json');
+      assert.deepStrictEqual(new SettingsStore(file).get(), { ...DEFAULT_SETTINGS });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('get() returns a copy', () => {
+    const store = new SettingsStore(path.join(os.tmpdir(), 'voxkey-missing', 'none.json'));
+    store.get().language = 'xx';
+    assert.strictEqual(store.get().language, 'en-US');
+  });
+});

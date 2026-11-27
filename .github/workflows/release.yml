@@ -1,0 +1,39 @@
+name: Release
+
+# Builds installers for macOS and Windows when a version tag (for example v0.1.0) is pushed,
+# and attaches them to a draft GitHub release. Publish the draft to make it the latest release;
+# installed copies of VoxKey then find the update. Code signing is not set up yet.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Check that the tag matches package.json
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          [[ "${GITHUB_REF_NAME}" == "v${version}" ]] || { echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}"; exit 1; }
+      # Build the Windows helper from source, so the released binary matches native/injector.cs.
+      - if: runner.os == 'Windows'
+        run: npm run build:injector
+      - run: npm test
+      - run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'

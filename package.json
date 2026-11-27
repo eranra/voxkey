@@ -1,15 +1,20 @@
 {
   "name": "voxkey",
-  "version": "0.0.5",
-  "description": "VoxKey: Voice-Enabled Desktop Virtual Keyboard with real-time speech-to-text",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "start:minimized": "electron . --minimized",
-    "test": "node --test test/unit/*.test.js test/integration/*.test.js",
-    "bump:patch": "node -e \"const pkg = require('./package.json'); const parts = pkg.version.split('.').map(Number); parts[2]++; pkg.version = parts.join('.'); require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)); console.log('Bumped to ' + pkg.version);\"",
-    "bump:minor": "node -e \"const pkg = require('./package.json'); const parts = pkg.version.split('.').map(Number); parts[1]++; parts[2]=0; pkg.version = parts.join('.'); require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)); console.log('Bumped to ' + pkg.version);\"",
-    "build:injector": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /target:exe /out:bin\\injector.exe native\\injector.cs"
+  "productName": "VoxKey",
+  "version": "0.1.0",
+  "description": "VoxKey: on-screen keyboard with real-time voice typing for Windows and macOS",
+  "license": "MIT",
+  "author": {
+    "name": "Eran Raichstein",
+    "email": "eran.raichstein@gmail.com"
+  },
+  "homepage": "https://github.com/eranra/voxkey",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eranra/voxkey.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eranra/voxkey/issues"
   },
   "keywords": [
     "voxkey",
@@ -18,13 +23,33 @@
     "electron",
     "speech-to-text"
   ],
-  "author": "",
-  "license": "MIT",
+  "main": "main.js",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "setup": "node scripts/ensure-electron.js",
+    "prestart": "node scripts/ensure-electron.js",
+    "start": "electron .",
+    "prestart:minimized": "node scripts/ensure-electron.js",
+    "start:minimized": "electron . --minimized",
+    "test": "node --test test/unit/*.test.js test/integration/*.test.js",
+    "lint": "node scripts/check-syntax.js",
+    "check": "npm run lint && npm test",
+    "dist": "electron-builder --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "bump:patch": "npm version patch --no-git-tag-version",
+    "bump:minor": "npm version minor --no-git-tag-version",
+    "build:injector": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /target:exe /out:bin\\injector.exe native\\injector.cs"
+  },
   "dependencies": {
-    "simple-keyboard": "^3.8.0",
+    "electron-updater": "6.8.10",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "44.9.0",
+    "electron-builder": "26.17.0"
   }
 }

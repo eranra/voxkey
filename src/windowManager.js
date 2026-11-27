@@ -1,43 +1,56 @@
 const { SIZES, PATHS } = require('./config');
 
 /**
- * Pure function to calculate clamped window bounds for full or compact mode.
+ * Settings for every VoxKey window: no Node.js in the page, and only the small API in
+ * renderer/preload.js. A page bug can then never run programs or read files.
  */
-function calculateBounds(screenWidth, screenHeight, isCompact, userCompactPos = null, userFullPos = null) {
+function secureWebPreferences() {
+  return {
+    preload: PATHS.preload,
+    nodeIntegration: false,
+    contextIsolation: true,
+    sandbox: true
+  };
+}
+
+/**
+ * Calculates the window bounds for full or compact mode, clamped inside the display's work area.
+ * `origin` is the top-left corner of the work area. It is not (0, 0) on macOS (the menu bar) or
+ * when the primary display is not the left-most one.
+ */
+function calculateBounds(screenWidth, screenHeight, isCompact, userCompactPos = null, userFullPos = null, origin = { x: 0, y: 0 }) {
   const width = isCompact ? SIZES.compact.width : SIZES.full.width;
   const height = isCompact ? SIZES.compact.height : SIZES.full.height;
+  const hasPos = (p) => p && p.x !== null && p.y !== null && p.x !== undefined && p.y !== undefined;
 
   let x, y;
-  if (isCompact) {
-    if (userCompactPos && userCompactPos.x !== null && userCompactPos.y !== null) {
-      x = userCompactPos.x;
-      y = userCompactPos.y;
-    } else {
-      // Default: bottom right corner with margin
-      x = screenWidth - width - 30;
-      y = screenHeight - height - 20;
-    }
+  const userPos = isCompact ? userCompactPos : userFullPos;
+  if (hasPos(userPos)) {
+    x = userPos.x;
+    y = userPos.y;
+  } else if (isCompact) {
+    // Default: bottom right corner with margin
+    x = origin.x + screenWidth - width - 30;
+    y = origin.y + screenHeight - height - 20;
   } else {
-    if (userFullPos && userFullPos.x !== null && userFullPos.y !== null) {
-      x = userFullPos.x;
-      y = userFullPos.y;
-    } else {
-      // Default: centered at bottom with 16px bottom margin
-      x = Math.round((screenWidth - width) / 2);
-      y = screenHeight - height - 16;
-    }
+    // Default: centered at bottom with 16px bottom margin
+    x = origin.x + Math.round((screenWidth - width) / 2);
+    y = origin.y + screenHeight - height - 16;
   }
 
-  // Strict viewport boundary clamping
-  const minX = 10;
-  const maxX = Math.max(minX, screenWidth - width - 10);
-  const minY = 10;
-  const maxY = Math.max(minY, screenHeight - height - 10);
+  return { ...clampToArea(x, y, width, height, { x: origin.x, y: origin.y, width: screenWidth, height: screenHeight }), width, height };
+}
 
-  x = Math.max(minX, Math.min(x, maxX));
-  y = Math.max(minY, Math.min(y, maxY));
-
-  return { x, y, width, height };
+/** Keeps a width x height window at least 10 px inside `area` (when it fits). */
+function clampToArea(x, y, width, height, area) {
+  const minX = area.x + 10;
+  const maxX = Math.max(minX, area.x + area.width - width - 10);
+  const minY = area.y + 10;
+  const maxY = Math.max(minY, area.y + area.height - height - 10);
+  return {
+    x: Math.max(minX, Math.min(x, maxX)),
+    y: Math.max(minY, Math.min(y, maxY))
+  };
 }
 
 class WindowManager {
@@ -49,10 +62,8 @@ class WindowManager {
   }
 
   createWindow(BrowserWindow, screenModule, startMinimized = false) {
-    const primaryDisplay = screenModule.getPrimaryDisplay();
-    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-
-    const bounds = calculateBounds(screenWidth, screenHeight, false);
+    const area = screenModule.getPrimaryDisplay().workArea;
+    const bounds = calculateBounds(area.width, area.height, false, null, null, area);
 
     this.mainWindow = new BrowserWindow({
       width: bounds.width,
@@ -66,10 +77,7 @@ class WindowManager {
       resizable: true, // Enables smooth setSize transitions between compact pill and full layout
       skipTaskbar: false,
       show: false, // Keep hidden until ready-to-show to prevent visual flash
-      webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false
-      }
+      webPreferences: secureWebPreferences()
     });
 
     this.mainWindow.loadFile(PATHS.rendererIndex);
@@ -125,17 +133,10 @@ class WindowManager {
 
     try {
       const electronScreen = screenModule || require('electron').screen;
-      const primaryDisplay = electronScreen.getPrimaryDisplay();
-      const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-
+      const area = electronScreen.getPrimaryDisplay().workArea;
       const [curW, curH] = this.mainWindow.getSize();
       const [curX, curY] = this.mainWindow.getPosition();
-
-      const maxX = Math.max(10, screenWidth - curW - 10);
-      const maxY = Math.max(10, screenHeight - curH - 10);
-
-      const clampedX = Math.max(10, Math.min(curX, maxX));
-      const clampedY = Math.max(10, Math.min(curY, maxY));
+      const { x: clampedX, y: clampedY } = clampToArea(curX, curY, curW, curH, area);
 
       if (clampedX !== curX || clampedY !== curY) {
         this.mainWindow.setPosition(clampedX, clampedY);
@@ -148,9 +149,7 @@ class WindowManager {
   resize(screenModule, collapsed) {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
 
-    const primaryDisplay = screenModule.getPrimaryDisplay();
-    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-
+    const area = screenModule.getPrimaryDisplay().workArea;
     const [curX, curY] = this.mainWindow.getPosition();
 
     if (collapsed) {
@@ -158,7 +157,7 @@ class WindowManager {
       this.userFullPos = { x: curX, y: curY };
       this.isCompact = true;
 
-      const bounds = calculateBounds(screenWidth, screenHeight, true, this.userCompactPos, this.userFullPos);
+      const bounds = calculateBounds(area.width, area.height, true, this.userCompactPos, this.userFullPos, area);
       this.mainWindow.setSize(bounds.width, bounds.height);
       this.mainWindow.setPosition(bounds.x, bounds.y);
     } else {
@@ -166,7 +165,7 @@ class WindowManager {
       this.userCompactPos = { x: curX, y: curY };
       this.isCompact = false;
 
-      const bounds = calculateBounds(screenWidth, screenHeight, false, this.userCompactPos, this.userFullPos);
+      const bounds = calculateBounds(area.width, area.height, false, this.userCompactPos, this.userFullPos, area);
       this.mainWindow.setSize(bounds.width, bounds.height);
       this.mainWindow.setPosition(bounds.x, bounds.y);
     }
@@ -181,5 +180,7 @@ class WindowManager {
 
 module.exports = {
   calculateBounds,
+  clampToArea,
+  secureWebPreferences,
   WindowManager
 };
