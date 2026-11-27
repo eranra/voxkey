@@ -202,6 +202,8 @@ function loadRendererPage() {
       title: '',
       onclick: null,
       addEventListener() {},
+      setAttribute() {},
+      querySelectorAll: () => [],
       appendChild(child) { this.children.push(child); }
     };
     // Like a real element: classList.add changes className, and assigning innerHTML replaces the children.
@@ -230,6 +232,8 @@ function loadRendererPage() {
   const sandbox = {
     console: { log() {}, warn() {} },
     setTimeout: () => 0,
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
     document: {
       getElementById: (id) => elements[id] || null,
       querySelector: () => null,
@@ -240,8 +244,9 @@ function loadRendererPage() {
   sandbox.voxkey = {
     injectText() {}, injectKey() {}, toggleVoice() {}, setLanguage() {},
     resizeWindow() {}, hideToTray() {}, closeApp() {}, openAbout() {},
-    getInfo: () => Promise.resolve({ version: 'test', language: DEFAULT_LANGUAGE }),
-    onVoiceState() {}, onSpeechUpdate() {}, onVoiceError() {}
+    getInfo: () => Promise.resolve({ version: 'test', language: DEFAULT_LANGUAGE, voiceMode: 'toggle' }),
+    onVoiceState() {}, onSpeechUpdate() {}, onVoiceError() {},
+    onAudioLevel() {}, onVoiceMode() {}
   };
 
   vm.runInNewContext(languagesSource, sandbox);

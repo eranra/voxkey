@@ -8,6 +8,8 @@ const path = require('path');
 const vm = require('vm');
 
 const appSource = fs.readFileSync(path.join(__dirname, '..', '..', 'renderer', 'app.js'), 'utf8');
+// app.js reads the language registry, which the real page loads before it (renderer/index.html).
+const languagesSource = fs.readFileSync(path.join(__dirname, '..', '..', 'renderer', 'languages.js'), 'utf8');
 
 /** A DOM element fake: enough of the API that app.js can load and render the keyboard. */
 function makeEl(extra = {}) {
@@ -98,6 +100,7 @@ function loadRendererPage({ voiceMode = 'toggle' } = {}) {
   sandbox.window = sandbox;
   sandbox.voxkey = api;
 
+  vm.runInNewContext(languagesSource, sandbox);
   vm.runInNewContext(appSource, sandbox);
 
   const page = {
