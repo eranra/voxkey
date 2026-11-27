@@ -7,7 +7,8 @@ const { REPO_URL } = require('../../src/update');
 const { unpackedPath } = require('../../src/config');
 
 const root = path.join(__dirname, '..', '..');
-const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+// Git on Windows checks files out with \r\n line endings; compare with \n everywhere.
+const read = (file) => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 
 describe('packaging', () => {
   const builder = read('electron-builder.yml');
@@ -52,6 +53,13 @@ describe('packaging', () => {
       assert.match(read(workflow), /os: \[macos-latest, windows-latest\]/, workflow);
     }
     assert.match(read('.github/workflows/release.yml'), /tags: \['v\*'\]/);
+  });
+
+  it('the release workflow creates one draft before the build jobs upload to it', () => {
+    const release = read('.github/workflows/release.yml');
+    assert.match(release, /^  draft:/m);
+    assert.match(release, /gh release create "\$GITHUB_REF_NAME"[^\n]*--draft/);
+    assert.match(release, /^  package:\n    needs: draft/m);
   });
 
   it('the changelog has an entry for this version', () => {

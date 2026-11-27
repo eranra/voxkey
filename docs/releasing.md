@@ -11,8 +11,8 @@
    git push origin v0.1.1
    ```
 
-5. The **Release** workflow checks that the tag matches `package.json`, builds the Windows helper from source,
-   runs the tests, and builds:
+5. The **Release** workflow creates a draft release for the tag, then (on macOS and Windows at the same time)
+   checks that the tag matches `package.json`, builds the Windows helper from source, runs the tests, and builds:
    - `VoxKey-Setup-<version>.exe` and `latest.yml` (Windows),
    - `VoxKey-<version>-arm64.dmg`, `VoxKey-<version>-x64.dmg` and `latest-mac.yml` (macOS).
 
