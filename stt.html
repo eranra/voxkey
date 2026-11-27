@@ -170,6 +170,12 @@
         if (recognition) recognition.lang = currentLang;
       }
       if (document.hidden) {
+        // A session that already runs would keep the old language and keep sending results
+        // while VoxKey thinks dictation stopped. End it, like a real error does.
+        if (isListening) {
+          isListening = false;
+          try { if (recognition) recognition.stop(); } catch (e) {}
+        }
         send({ type: 'speech_error', error: 'page-hidden' });
         return;
       }

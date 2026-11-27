@@ -42,6 +42,11 @@ Arabic keyboards: backspace and enter at the left end, the ?123 key at the right
 The symbols and alt-symbols layers stay shared by all languages; `¿` and `¡` join the shared
 alt-symbols layer, and `/` joins the shared symbols layer.
 
+Row width: a letter row holds at most 14 keys. Spanish row 3 needs them all (shift, z x c v b n m,
+á é í ó ú, backspace): all five acute vowels are common Spanish and this keyboard has no
+long-press. At 14 keys the row renders ~51 px keys in the 840 px window — smaller than the English
+keys, still larger than a phone keyboard's.
+
 ## Approach
 
 - **One registry, two environments.** `renderer/languages.js` maps each combo-box value to

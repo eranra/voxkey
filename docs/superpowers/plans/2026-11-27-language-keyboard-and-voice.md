@@ -24,7 +24,7 @@
 - `switchLayout('upper')` must never render `undefined` rows for languages without an `upper` variant. → Task 1 test: `layouts.upper || layouts.lower` is used (registry test: caseless have no `upper`; renderer wiring test).
 - A language change while dictating must not leave the recognizer stopped if the restart fails: the existing `onend` restart and error paths stay intact. → Task 3 tests: still listening after restart, one recognizer.
 - Changing the language while a start is still unconfirmed must not stack a second start timer. → Task 4 test: no extra timer, broadcast carries the new language.
-- Row density: no row may exceed 13 keys, or the 840 px window squeezes keys below a usable size. → Task 1 registry test.
+- Row density: no row may exceed 14 keys, or the 840 px window squeezes keys below a usable size (14 is needed by Spanish row 3, which carries all five acute vowels; see the spec's row-width note). → Task 1 registry test.
 
 ---
 

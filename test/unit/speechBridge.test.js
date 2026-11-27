@@ -313,6 +313,32 @@ describe('bridge page', () => {
     assert.strictEqual(page.recognition.running, true, 'still listening after the switch');
     assert.strictEqual(page.recognitions.length, 1, 'the same recognizer, not a new one');
     assert.deepStrictEqual(page.sent.at(-1), { type: 'status', status: 'listening' });
+    assert.ok(!page.sent.some((m) => m.type === 'status' && m.status === 'idle'), 'no idle flicker during the switch');
+  });
+
+  it('a language change while the page is hidden stops the session instead of leaving a ghost running', () => {
+    const page = loadBridgePage();
+    page.connect();
+    page.receive({ command: 'start', lang: 'en-US' });
+    assert.strictEqual(page.recognition.running, true);
+
+    // The page becomes hidden, then VoxKey re-broadcasts the start in a new language.
+    // The old session would keep running in the old language while VoxKey reports an error,
+    // so the page must end it, report the error, and not auto-restart.
+    page.setHidden(true);
+    page.receive({ command: 'start', lang: 'he-IL' });
+    assert.strictEqual(page.recognition.running, false, 'the session ends');
+    assert.strictEqual(page.recognition.starts, 1, 'no restart while hidden');
+    assert.deepStrictEqual(page.sent.at(-1), { type: 'speech_error', error: 'page-hidden' });
+    assert.ok(page.sent.some((m) => m.type === 'status' && m.status === 'idle'), 'the ended session is reported idle');
+
+    // Once visible again, dictation starts cleanly in the new language.
+    page.setHidden(false);
+    page.receive({ command: 'start', lang: 'he-IL' });
+    assert.strictEqual(page.recognition.running, true);
+    assert.strictEqual(page.recognition.lang, 'he-IL');
+    assert.strictEqual(page.recognition.starts, 2, 'a fresh session in the new language');
+    assert.deepStrictEqual(page.sent.at(-1), { type: 'status', status: 'listening' });
   });
 
   it('a start with the same language while running does not restart the session', () => {
