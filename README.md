@@ -6,6 +6,30 @@ Current Version: **v0.0.5**
 
 ---
 
+## 📦 Install
+
+Requirements: Node.js and npm. Google Chrome is used for speech recognition.
+
+```bash
+npm ci
+npm run setup     # downloads and unpacks the Electron binary
+npm start         # or: npm run start:minimized
+```
+
+`npm start` also runs the setup step, so `npm run setup` is optional. The setup step is needed because
+newer npm versions block Electron's own install script, and on newer Node versions that script can stop
+before it finishes unpacking.
+
+### macOS
+
+- Start VoxKey with `npm start` or `npm run start:minimized`. The `.vbs` and `.bat` launchers are Windows-only.
+- **Accessibility permission:** VoxKey types into other apps through System Events (`osascript`).
+  Allow your terminal app (or Electron) in System Settings → Privacy & Security → Accessibility.
+  Without this permission, no text is typed.
+- **Microphone permission:** dictation runs in Chrome, so allow microphone access for Chrome when asked.
+
+---
+
 ## 🚀 Launch Options (No Black Console Windows)
 
 We provide silent background Windows launchers so no terminal or console window is displayed:

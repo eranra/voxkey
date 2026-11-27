@@ -4,7 +4,10 @@
   "description": "VoxKey: Voice-Enabled Desktop Virtual Keyboard with real-time speech-to-text",
   "main": "main.js",
   "scripts": {
+    "setup": "node scripts/ensure-electron.js",
+    "prestart": "node scripts/ensure-electron.js",
     "start": "electron .",
+    "prestart:minimized": "node scripts/ensure-electron.js",
     "start:minimized": "electron . --minimized",
     "test": "node --test test/unit/*.test.js test/integration/*.test.js",
     "bump:patch": "node -e \"const pkg = require('./package.json'); const parts = pkg.version.split('.').map(Number); parts[2]++; pkg.version = parts.join('.'); require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)); console.log('Bumped to ' + pkg.version);\"",
