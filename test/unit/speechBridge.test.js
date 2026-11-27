@@ -298,6 +298,33 @@ describe('bridge page', () => {
     assert.deepStrictEqual(page.sent.at(-1), { type: 'status', status: 'listening' });
     assert.ok(!page.sent.some((m) => m.type === 'audio_level'), 'no levels, but no failure either');
   });
+
+  it('restarts the session in the new language when the language changes mid-session', () => {
+    const page = loadBridgePage();
+    page.connect();
+    page.receive({ command: 'start', lang: 'en-US' });
+    assert.strictEqual(page.recognition.starts, 1);
+
+    // Chrome applies recognition.lang only when a session starts, so a language change
+    // while listening must end the running session; onend then restarts it.
+    page.receive({ command: 'start', lang: 'he-IL' });
+    assert.strictEqual(page.recognition.lang, 'he-IL', 'the recognizer carries the new language');
+    assert.strictEqual(page.recognition.starts, 2, 'a new session started in the new language');
+    assert.strictEqual(page.recognition.running, true, 'still listening after the switch');
+    assert.strictEqual(page.recognitions.length, 1, 'the same recognizer, not a new one');
+    assert.deepStrictEqual(page.sent.at(-1), { type: 'status', status: 'listening' });
+  });
+
+  it('a start with the same language while running does not restart the session', () => {
+    const page = loadBridgePage();
+    page.connect();
+    page.receive({ command: 'start', lang: 'en-US' });
+    const starts = page.recognition.starts;
+    page.receive({ command: 'start', lang: 'en-US' });
+    assert.strictEqual(page.recognition.starts, starts, 'no restart');
+    assert.strictEqual(page.recognition.running, true);
+    assert.deepStrictEqual(page.sent.at(-1), { type: 'status', status: 'listening' });
+  });
 });
 
 // ---- The start/confirm handshake in VoxKey --------------------------------------------------------

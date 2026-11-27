@@ -163,6 +163,8 @@
     }
 
     function startListening(lang) {
+      // Chrome applies recognition.lang only when a session starts, not while one runs.
+      const langChanged = Boolean(lang) && lang !== currentLang;
       if (lang) {
         currentLang = lang;
         if (recognition) recognition.lang = currentLang;
@@ -180,8 +182,14 @@
       try {
         recognition.start();
       } catch (err) {
-        // Already running (for example after a reconnect): confirm instead of failing.
-        send({ type: 'status', status: 'listening' });
+        if (langChanged) {
+          // Already running in the old language. End the session; onend restarts listening,
+          // and the new session runs with the new recognition.lang.
+          try { recognition.stop(); } catch (e) {}
+        } else {
+          // Already running (for example after a reconnect): confirm instead of failing.
+          send({ type: 'status', status: 'listening' });
+        }
       }
     }
 
