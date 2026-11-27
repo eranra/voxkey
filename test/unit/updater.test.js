@@ -109,6 +109,33 @@ describe('Updater on Windows', () => {
   });
 });
 
+describe('Updater with overlapping checks', () => {
+  it('a manual check during an automatic one still shows the result', async () => {
+    const { updater, calls } = setup({ latest: '0.1.0' });
+    const fetch = updater.deps.fetch;
+    updater.deps.fetch = (...args) => new Promise((r) => setTimeout(() => r(fetch(...args)), 20));
+    const automatic = updater.check(false);
+    const manual = updater.check(true);
+    await Promise.all([automatic, manual]);
+    assert.strictEqual(calls.fetched.length, 1, 'only one request to GitHub');
+    assert.strictEqual(calls.dialogs.length, 1);
+    assert.strictEqual(calls.dialogs[0].message, "You're up to date");
+  });
+
+  it('a manual check during an automatic one announces a new version again', async () => {
+    const { updater, calls, getAnnounced } = setup({ latest: '0.2.0' });
+    await updater.check(false);
+    assert.strictEqual(calls.dialogs.length, 1);
+    assert.strictEqual(getAnnounced(), '0.2.0');
+    const fetch = updater.deps.fetch;
+    updater.deps.fetch = (...args) => new Promise((r) => setTimeout(() => r(fetch(...args)), 20));
+    const automatic = updater.check(false);
+    await updater.check(true);
+    await automatic;
+    assert.strictEqual(calls.dialogs.length, 2, 'the user asked, so they are told again');
+  });
+});
+
 describe('Updater download errors', () => {
   it('a failed Windows download becomes an error state, without crashing', async () => {
     const { updater, autoUpdater } = setup({ platform: 'win32' });
