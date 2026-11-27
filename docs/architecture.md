@@ -47,6 +47,22 @@ still hidden (minimized), it answers a start with `speech_error: page-hidden` in
 Only VoxKey's own page may open the WebSocket (`isTrustedRequest` checks the `Origin` and `Sec-Fetch-Site`
 headers). Without this check, any web site could make VoxKey type into your apps.
 
+## Languages
+
+The language list in the keyboard header drives both the keyboard and the recognition:
+
+- `renderer/languages.js` is the one registry: for every language it holds the keyboard rows, the
+  space-bar label in the language's own script, and whether it is right-to-left. The page loads it
+  as a plain script; the tests load it as a module. Rows are written in visual left-to-right order;
+  right-to-left languages keep their letters at the physical positions of the national layout and
+  mirror only the action keys (backspace and enter at the left end), like mobile keyboards. Hebrew
+  and Arabic have no uppercase, so they have no shift key and no uppercase variant.
+- Changing the language persists it (`set-lang` → `src/store.js`) and re-renders the keyboard.
+- `src/speechServer.js` sends the language with every start command. Chrome applies
+  `recognition.lang` only when a session starts, so `setLanguage` re-broadcasts the start command
+  while dictation runs: `stt.html` then ends the running session and its `onend` auto-restart
+  brings it back in the new language.
+
 ## Typing into other apps
 
 `src/injectorManager.js`:
@@ -92,6 +108,7 @@ header, which a web page cannot send without a CORS preflight that VoxKey never 
 | `src/instanceManager.js` | Single instance and version takeover. |
 | `src/update.js`, `src/updater.js` | Update checks. |
 | `renderer/` | Keyboard and About pages, and the preload API. |
+| `renderer/languages.js` | The language registry: keyboard rows, names, text direction. |
 | `stt.html` | Speech page that runs in Chrome. |
 | `scripts/ensure-electron.js` | Downloads the Electron binary when npm skipped it. |
 | `test/` | Unit and integration tests (`node --test`). |

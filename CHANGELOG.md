@@ -18,6 +18,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
   level bars that grow and shrink with the live loudness of your voice, and the ring around the button scales
   with it too. Before, both showed a fixed animation that did not react to sound.
 
+### Added
+
+- **The keyboard follows the selected language.** Choosing a language in the header list now swaps
+  the on-screen keys to that language's layout: QWERTY for English, QWERTZ with umlauts for German,
+  AZERTY with é è à ç for French, ñ and acute vowels for Spanish, the standard Hebrew layout
+  (right-to-left, backspace and enter mirrored to the left), the standard Arabic layout, and the
+  Russian ЙЦУКЕН layout. Chinese keeps the Latin keys for pinyin input through the system IME.
+  The space bar names the language in its own script (עברית, Español, Русский, ...).
+- **Voice recognition follows the selected language immediately.** Before, the recognizer kept the
+  language of the session that was already running; Chrome applies a language only when a session
+  starts. Changing the language while dictating now restarts recognition in the new language
+  without leaving the listening state.
+
 ### Changed
 
 - **Compact mode button:** a mic in a pill (the compact floating bar in miniature) instead of a bare down chevron.
