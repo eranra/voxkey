@@ -11,7 +11,20 @@ permissions:
   contents: write
 
 jobs:
+  # Create the draft release once, before the build jobs. Without this, the macOS and Windows jobs both
+  # found no release and each created its own draft (this happened for v0.1.1).
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft release if it does not exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "VoxKey ${GITHUB_REF_NAME#v}" --notes "See CHANGELOG.md."
+
   package:
+    needs: draft
     strategy:
       fail-fast: false
       matrix:

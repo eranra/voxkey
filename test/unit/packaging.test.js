@@ -54,6 +54,13 @@ describe('packaging', () => {
     assert.match(read('.github/workflows/release.yml'), /tags: \['v\*'\]/);
   });
 
+  it('the release workflow creates one draft before the build jobs upload to it', () => {
+    const release = read('.github/workflows/release.yml');
+    assert.match(release, /^  draft:/m);
+    assert.match(release, /gh release create "\$GITHUB_REF_NAME"[^\n]*--draft/);
+    assert.match(release, /^  package:\n    needs: draft/m);
+  });
+
   it('the changelog has an entry for this version', () => {
     assert.match(read('CHANGELOG.md'), new RegExp(`## \\[${pkg.version.replace(/\./g, '\\.')}\\]`));
   });
