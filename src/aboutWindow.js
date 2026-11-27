@@ -33,6 +33,7 @@ class AboutWindow {
   open() {
     if (this.window && !this.window.isDestroyed()) {
       this.window.show();
+      this.window.moveTop();
       this.window.focus();
       return this.window;
     }
@@ -50,12 +51,28 @@ class AboutWindow {
       backgroundColor: '#1e1f24',
       webPreferences: secureWebPreferences()
     });
+    // Same level as the keyboard window (see WindowManager.show), so the keyboard never covers it.
+    this.window.setAlwaysOnTop(true, 'screen-saver');
     this.window.loadFile(PATHS.aboutHtml);
-    this.window.once('ready-to-show', () => this.window && this.window.show());
+    this.window.once('ready-to-show', () => {
+      if (!this.window) return;
+      this.window.show();
+      this.window.moveTop();
+    });
     this.window.on('closed', () => {
       this.window = null;
     });
     return this.window;
+  }
+
+  /** Opens the window (or brings it to the front) and resolves with it once it is visible. */
+  openAndWait() {
+    const win = this.open();
+    if (win.isVisible()) return Promise.resolve(win);
+    return new Promise((resolve) => {
+      win.once('ready-to-show', () => resolve(win));
+      win.once('closed', () => resolve(null));
+    });
   }
 
   /** Sends fresh information to the window, if it is open. */
