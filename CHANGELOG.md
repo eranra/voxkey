@@ -3,7 +3,10 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] - 2026-11-27
+## [0.1.1] - 2026-11-27
+
+The first release with installers for Windows and macOS. Version 0.1.0 was not published; its changes are
+part of this release.
 
 ### Added
 
