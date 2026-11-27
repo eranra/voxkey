@@ -42,6 +42,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - VoxKey could freeze after *Check for Updates…*: on macOS the result message is modal and blocks the app
   until it is closed, and the always-on-top keyboard covered it. Update messages now appear as a sheet on
   the About window, above the keyboard, and VoxKey keeps working while they are open.
+- *Check for Updates…* did nothing when an automatic check was running at the same time. The manual
+  request now waits for that check and shows its result.
 
 ### Changed
 

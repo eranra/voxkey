@@ -33,6 +33,8 @@ class Updater {
     this.channel = updateChannel({ platform: this.platform, packaged: deps.app.isPackaged });
     this.state = { kind: 'idle' };
     this.busy = false;
+    this.manualPending = false;
+    this.inflight = null;
     this.firstTimer = null;
     this.timer = null;
 
@@ -101,12 +103,24 @@ class Updater {
       }
       return;
     }
-    if (this.busy) return;
+    if (this.busy) {
+      // A check is already running. A manual request must not be lost: show the result when it ends.
+      if (manual) this.manualPending = true;
+      return this.inflight;
+    }
     if (this.state.kind === 'ready') {
       if (manual) void this.offerRestart(this.state.version);
       return;
     }
     this.busy = true;
+    this.inflight = this.run(manual);
+    return this.inflight;
+  }
+
+  async run(manual) {
+    const { dialog, shell } = this.deps;
+    // True when the user asked, also if they asked while this (automatic) check was running.
+    const loud = () => manual || this.manualPending;
     this.set({ kind: 'checking' });
     try {
       // Windows uses electron-updater (it downloads and installs). macOS only needs the newest
@@ -117,7 +131,7 @@ class Updater {
 
       if (!latest || !isNewer(latest, this.currentVersion)) {
         this.set({ kind: 'up-to-date', checkedAt: Date.now() });
-        if (manual) {
+        if (loud()) {
           await dialog.showMessageBox({
             type: 'info',
             message: "You're up to date",
@@ -127,7 +141,7 @@ class Updater {
         return;
       }
 
-      const announce = shouldAnnounce(latest, this.currentVersion, this.hooks.lastAnnounced(), manual);
+      const announce = shouldAnnounce(latest, this.currentVersion, this.hooks.lastAnnounced(), loud());
       if (announce) this.hooks.setLastAnnounced(latest);
 
       if (this.channel === 'auto') {
@@ -145,7 +159,7 @@ class Updater {
       const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
       this.hooks.log('update check failed:', message);
       this.set({ kind: 'error', message });
-      if (manual) {
+      if (loud()) {
         const { response } = await dialog.showMessageBox({
           type: 'warning',
           message: 'Could not check for updates',
@@ -158,6 +172,8 @@ class Updater {
       }
     } finally {
       this.busy = false;
+      this.manualPending = false;
+      this.inflight = null;
     }
   }
 
