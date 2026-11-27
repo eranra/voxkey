@@ -7,7 +7,8 @@ const { REPO_URL } = require('../../src/update');
 const { unpackedPath } = require('../../src/config');
 
 const root = path.join(__dirname, '..', '..');
-const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
+// Git on Windows checks files out with \r\n line endings; compare with \n everywhere.
+const read = (file) => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 
 describe('packaging', () => {
   const builder = read('electron-builder.yml');
