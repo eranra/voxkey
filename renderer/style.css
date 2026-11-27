@@ -329,3 +329,9 @@ body {
 .key-enter:active {
   background: #669df6;
 }
+
+/* A voice typing error in the transcript area */
+.transcript-interim.transcript-error {
+  color: #ffb4a8;
+  font-style: normal;
+}

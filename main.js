@@ -14,7 +14,7 @@ const {
 const { APP_VERSION } = require('./src/config');
 const { WindowManager } = require('./src/windowManager');
 const { InjectorManager } = require('./src/injectorManager');
-const { SpeechServer } = require('./src/speechServer');
+const { SpeechServer, voiceErrorText } = require('./src/speechServer');
 const { TrayManager } = require('./src/trayManager');
 const { InstanceManager } = require('./src/instanceManager');
 const { SettingsStore } = require('./src/store');
@@ -118,6 +118,9 @@ function runPrimaryApp() {
     onSpeechError: (error) => {
       console.warn('[VoxKey Voice] Speech error:', error);
       sendToKeyboard('voice-state', 'idle');
+      sendToKeyboard('voice-error', voiceErrorText(error));
+      // A bridge that stopped answering is replaced, so the next press of the mic works.
+      if (error === 'bridge-no-response') speechServer.restartBridge();
     },
     onBridgeConnect: () => {
       // Hide the background Chrome window as soon as it connects (Windows only; a no-op elsewhere).
@@ -129,7 +132,8 @@ function runPrimaryApp() {
       console.log('[VoxKey Engine] A newer version asked to take over. Quitting...');
       app.quit();
     },
-    onShowRequest: () => windowMgr.toggle(screen, true)
+    onShowRequest: () => windowMgr.toggle(screen, true),
+    onBridgeReady: () => injectorMgr.hideBridgeWindow()
   });
   speechServer.setLanguage(store.get().language);
 

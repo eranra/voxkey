@@ -9,10 +9,20 @@ without Node.js and talk to the main process only through `renderer/preload.js`.
 Electron has no speech recognition of its own, so VoxKey uses Google Chrome's Web Speech API:
 
 1. `src/speechServer.js` starts an HTTP and WebSocket server on `127.0.0.1:19876`.
-2. It starts Chrome with a separate profile and `--app=http://127.0.0.1:19876/stt.html`, in a hidden 1×1 window.
+2. It starts Chrome with a separate profile and `--app=http://127.0.0.1:19876/stt.html`, in a small window
+   (`bridgeArgs()` in `src/speechServer.js`).
 3. `stt.html` connects back over WebSocket. On F8, the server sends `{command: 'start', lang}`; the page sends
-   `status`, `speech_result` (interim and final text) and `speech_error` messages.
-4. Final text goes to the injector, which types it into the focused app.
+   `status`, `speech_result` (interim and final text), `speech_error` and `bridge_state` (visible or hidden).
+4. The keyboard shows "Listening" only after the page confirms with `status: listening`. Without a confirmation
+   within 4 seconds, VoxKey reports `bridge-no-response` and restarts the bridge.
+5. Final text goes to the injector, which types it into the focused app.
+
+**Chrome gives no speech results while the page is hidden.** On macOS, Chrome counts a window as hidden when
+other windows cover it, and the bridge window is usually covered. `bridgeArgs()` therefore passes
+`--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`,
+`--disable-background-timer-throttling` and `--disable-features=CalculateNativeWinOcclusion`. If the page is
+still hidden (minimized), it answers a start with `speech_error: page-hidden` instead of pretending to listen.
+`test/unit/speechBridge.test.js` covers all of this, including the real `stt.html` script.
 
 Only VoxKey's own page may open the WebSocket (`isTrustedRequest` checks the `Origin` and `Sec-Fetch-Site`
 headers). Without this check, any web site could make VoxKey type into your apps.

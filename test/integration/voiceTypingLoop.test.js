@@ -35,15 +35,20 @@ describe('Voice Typing End-to-End Loop Integration Test', () => {
     await new Promise((resolve) => ws.on('open', resolve));
 
     ws.on('message', (data) => {
-      clientMessages.push(JSON.parse(data.toString()));
+      const msg = JSON.parse(data.toString());
+      clientMessages.push(msg);
+      // Like stt.html: confirm a start once recognition runs.
+      if (msg.command === 'start') ws.send(JSON.stringify({ type: 'status', status: 'listening' }));
     });
 
-    // 2. User presses F8 (toggleVoice)
+    // 2. User presses F8 (toggleVoice). VoxKey asks the bridge to start, and waits for its confirmation.
     const isStarted = server.toggleVoice('en-US');
     assert.strictEqual(isStarted, true);
-    assert.strictEqual(server.isRecording, true);
+    assert.strictEqual(server.isRecording, false, 'not "listening" before the bridge confirms');
 
     await new Promise(r => setTimeout(r, 100));
+    assert.strictEqual(server.isRecording, true);
+    assert.deepStrictEqual(statuses, ['listening']);
 
     // Verify Chrome bridge received start command
     assert.ok(clientMessages.length > 0);
