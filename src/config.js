@@ -21,6 +21,9 @@ const PATHS = {
   injector: unpackedPath(path.join(root, 'bin', 'injector.exe')),
   assets: path.join(root, 'assets'),
   icon: path.join(root, 'assets', 'icon.png'),
+  // Made by scripts/make-icons.js. Electron loads the @2x file on Retina screens by itself.
+  trayIconMac: path.join(root, 'assets', 'trayTemplate.png'),
+  trayIconWin: path.join(root, 'assets', 'tray.png'),
   sttHtml: path.join(root, 'stt.html'),
   rendererIndex: path.join(root, 'renderer', 'index.html'),
   aboutHtml: path.join(root, 'renderer', 'about.html'),

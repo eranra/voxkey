@@ -37,8 +37,14 @@ function toMenuTemplate(model, run) {
   });
 }
 
-/** Tray icon size in points: 16 in the macOS menu bar, 16 in the Windows notification area. */
-const TRAY_ICON_SIZE = 16;
+/**
+ * Tray icon file for each system (made by scripts/make-icons.js):
+ * - macOS: a black "template" image; macOS colors it to match a light or dark menu bar.
+ * - Windows: the colored waveform.
+ */
+function trayIconFile(platform) {
+  return platform === 'darwin' ? PATHS.trayIconMac : PATHS.trayIconWin;
+}
 
 class TrayManager {
   constructor(electron = require('electron')) {
@@ -52,8 +58,8 @@ class TrayManager {
     const { Tray, nativeImage } = this.electron;
     this.run = run;
 
-    // The app icon is 1024 px. Without resizing, macOS shows it at full size in the menu bar.
-    const icon = nativeImage.createFromPath(PATHS.icon).resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
+    const icon = nativeImage.createFromPath(trayIconFile(process.platform));
+    if (process.platform === 'darwin') icon.setTemplateImage(true);
 
     this.tray = new Tray(icon);
     this.tray.setToolTip(`VoxKey v${APP_VERSION}\nPress F8 to dictate\nClick to Show/Hide`);
@@ -84,6 +90,6 @@ class TrayManager {
 module.exports = {
   buildTrayMenuModel,
   toMenuTemplate,
-  TRAY_ICON_SIZE,
+  trayIconFile,
   TrayManager
 };
