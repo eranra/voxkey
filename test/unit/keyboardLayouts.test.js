@@ -5,12 +5,17 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { LANGUAGES, DEFAULT_LANGUAGE } = require('../../renderer/languages');
 
 /** The <option> values of the language combo box in renderer/index.html, in order. */
 function selectOptions() {
   const html = fs.readFileSync(path.join(__dirname, '..', '..', 'renderer', 'index.html'), 'utf8');
   return [...html.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]);
+}
+
+function readRenderer(name) {
+  return fs.readFileSync(path.join(__dirname, '..', '..', 'renderer', name), 'utf8');
 }
 
 /** Every string key of the three letter rows, ignoring action keys and the row-4 punctuation. */
@@ -147,5 +152,128 @@ describe('language registry', () => {
     assert.strictEqual(LANGUAGES['ar-SA'].name, 'العربية');
     assert.strictEqual(LANGUAGES['en-US'].name, 'English');
     assert.strictEqual(LANGUAGES['ru-RU'].name, 'Русский');
+  });
+});
+
+describe('renderer wiring', () => {
+  it('index.html loads the registry before app.js', () => {
+    const html = readRenderer('index.html');
+    const registryAt = html.indexOf('<script src="languages.js"></script>');
+    const appAt = html.indexOf('<script src="app.js"></script>');
+    assert.ok(registryAt !== -1, 'index.html loads languages.js');
+    assert.ok(appAt !== -1, 'index.html loads app.js');
+    assert.ok(registryAt < appAt, 'the registry loads first');
+  });
+
+  it('app.js renders from the registry instead of a hardcoded layout', () => {
+    const app = readRenderer('app.js');
+    assert.ok(!/^const LAYOUTS = \{/m.test(app), 'no hardcoded LAYOUTS table');
+    assert.ok(app.includes('VoxKeyLanguages'), 'uses the registry');
+    assert.ok(app.includes('setKeyboardLanguage'), 'has a language switch function');
+  });
+
+  it('app.js falls back to the default language and takes the space-bar label from the registry', () => {
+    const app = readRenderer('app.js');
+    assert.ok(app.includes('DEFAULT_LANGUAGE'), 'falls back for unknown languages');
+    assert.ok(!app.includes('selectedIndex'), 'the space-bar label no longer comes from the select box');
+    assert.match(app, /\.name/, 'the label comes from the registry name');
+  });
+});
+
+// ---- The real renderer script, run in a sandbox like speechBridge.test.js does for stt.html ----
+
+/** Loads languages.js and app.js with a minimal DOM, and returns the page for inspection. */
+function loadRendererPage() {
+  const languagesSource = readRenderer('languages.js');
+  const appSource = readRenderer('app.js');
+
+  const ids = [
+    'mic-btn', 'transcript-box', 'transcript-placeholder', 'transcript-interim', 'lang-select',
+    'minimize-btn', 'compact-icon', 'hide-btn', 'close-btn', 'keyboard-body',
+    'row-1', 'row-2', 'row-3', 'row-4', 'app-logo'
+  ];
+  const elements = {};
+  const makeEl = () => {
+    const el = {
+      children: [],
+      style: {},
+      className: '',
+      textContent: '',
+      title: '',
+      onclick: null,
+      addEventListener() {},
+      appendChild(child) { this.children.push(child); }
+    };
+    // Like a real element: classList.add changes className, and assigning innerHTML replaces the children.
+    el.classList = {
+      add: (...names) => {
+        const current = el.className ? el.className.split(/\s+/) : [];
+        el.className = [...current, ...names.filter((n) => !current.includes(n))].join(' ');
+      },
+      remove: () => {},
+      toggle: () => {}
+    };
+    let innerHTML = '';
+    Object.defineProperty(el, 'innerHTML', {
+      get: () => innerHTML,
+      set: (value) => {
+        innerHTML = value;
+        el.children = [];
+      }
+    });
+    return el;
+  };
+  for (const id of ids) elements[id] = makeEl();
+  elements['lang-select'].value = DEFAULT_LANGUAGE;
+  elements['lang-select'].options = Object.keys(LANGUAGES).map((value) => ({ value }));
+
+  const sandbox = {
+    console: { log() {}, warn() {} },
+    setTimeout: () => 0,
+    document: {
+      getElementById: (id) => elements[id] || null,
+      querySelector: () => null,
+      createElement: makeEl
+    }
+  };
+  sandbox.window = sandbox;
+  sandbox.voxkey = {
+    injectText() {}, injectKey() {}, toggleVoice() {}, setLanguage() {},
+    resizeWindow() {}, hideToTray() {}, closeApp() {}, openAbout() {},
+    getInfo: () => Promise.resolve({ version: 'test', language: DEFAULT_LANGUAGE }),
+    onVoiceState() {}, onSpeechUpdate() {}, onVoiceError() {}
+  };
+
+  vm.runInNewContext(languagesSource, sandbox);
+  vm.runInNewContext(appSource, sandbox);
+  return { sandbox, elements };
+}
+
+describe('renderer page', () => {
+  it('renders the English layout on startup', () => {
+    const { elements } = loadRendererPage();
+    assert.deepStrictEqual(elements['row-1'].children.map((k) => k.textContent), ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p']);
+  });
+
+  it('switching the combo box to Hebrew renders Hebrew rows, the Hebrew space label and the mirrored backspace', () => {
+    const { elements } = loadRendererPage();
+    elements['lang-select'].onchange({ target: { value: 'he-IL' } });
+    assert.deepStrictEqual(elements['row-1'].children.map((k) => k.textContent), ['ק', 'ר', 'א', 'ט', 'ו', 'ן', 'ם', 'פ']);
+    const space = elements['row-4'].children.find((k) => k.className.includes('key-space'));
+    assert.strictEqual(space.textContent, 'עברית');
+    assert.ok(elements['row-3'].children[0].className.includes('key-backspace'), 'backspace is the leftmost key');
+  });
+
+  it('an unknown language falls back to the default layout instead of an empty keyboard', () => {
+    const { sandbox, elements } = loadRendererPage();
+    sandbox.setKeyboardLanguage('xx-XX');
+    assert.strictEqual(elements['row-1'].children[0].textContent, 'q');
+  });
+
+  it('a missing uppercase variant falls back to the letter layer instead of undefined rows', () => {
+    const { sandbox, elements } = loadRendererPage();
+    sandbox.setKeyboardLanguage('ar-SA');
+    sandbox.switchLayout('upper');
+    assert.strictEqual(elements['row-1'].children[0].textContent, 'ض');
   });
 });
