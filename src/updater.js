@@ -90,6 +90,7 @@ class Updater {
   /** Checks now. `manual` = the user asked ("Check for Updates…"): always show the result. */
   async check(manual) {
     const { dialog, shell } = this.deps;
+    this.hooks.log(`checking for updates (${manual ? 'manual' : 'automatic'}, channel ${this.channel})`);
     if (this.channel === 'none') {
       if (manual) {
         await dialog.showMessageBox({

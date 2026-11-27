@@ -39,6 +39,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
   display that does not start at the top-left corner).
 - Pressing the microphone button while Chrome was still starting could start a second Chrome process.
 - Malformed messages from the speech page could crash the main process.
+- VoxKey could freeze after *Check for Updates…*: on macOS the result message is modal and blocks the app
+  until it is closed, and the always-on-top keyboard covered it. Update messages now appear as a sheet on
+  the About window, above the keyboard, and VoxKey keeps working while they are open.
 
 ### Changed
 

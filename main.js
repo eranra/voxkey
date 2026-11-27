@@ -20,6 +20,7 @@ const { InstanceManager } = require('./src/instanceManager');
 const { SettingsStore } = require('./src/store');
 const { Updater } = require('./src/updater');
 const { AboutWindow, aboutInfo } = require('./src/aboutWindow');
+const { createDialogs } = require('./src/dialogs');
 const { isAllowedLink, updateMenuLabel } = require('./src/update');
 
 const instanceMgr = new InstanceManager();
@@ -51,11 +52,20 @@ function runPrimaryApp() {
     if (Notification.isSupported()) new Notification({ title, body, silent: true }).show();
   };
 
+  // Message boxes that never hide behind the always-on-top keyboard (see src/dialogs.js).
+  const dialogs = createDialogs({
+    dialog,
+    app,
+    // Update messages appear as a sheet on the About window, which also shows the update status.
+    getParent: () => aboutWindow.openAndWait(),
+    getKeyboard: () => windowMgr.getWindow()
+  });
+
   const updater = new Updater(
     {
       app,
       autoUpdater: require('electron-updater').autoUpdater,
-      dialog,
+      dialog: dialogs,
       shell,
       clipboard,
       fetch: (url, init) => net.fetch(url, init),
