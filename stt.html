@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VoxKey Speech Bridge</title>
+  <style>
+    body {
+      background: transparent;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="status" style="display:none;"></div>
+  <div id="log" style="display:none;"></div>
+
+  <script>
+    // Keep window out of sight
+    try {
+      window.moveTo(-10000, -10000);
+      window.resizeTo(1, 1);
+    } catch (e) {}
+
+    let ws;
+    let recognition;
+    let isListening = false;
+    let currentLang = 'en-US';
+
+    function initRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.error("Web Speech API not supported.");
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.lang = currentLang;
+
+      recognition.onstart = () => {
+        isListening = true;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'status', status: 'listening' }));
+        }
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalTranscript += item[0].transcript;
+          } else {
+            interimTranscript += item[0].transcript;
+          }
+        }
+
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'speech_result',
+            interim: interimTranscript,
+            final: finalTranscript
+          }));
+        }
+      };
+
+      recognition.onerror = (event) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'speech_error', error: event.error }));
+        }
+      };
+
+      recognition.onend = () => {
+        if (isListening) {
+          try {
+            recognition.start();
+            return;
+          } catch (e) {}
+        }
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'status', status: 'idle' }));
+        }
+      };
+    }
+
+    function connectWS() {
+      const host = window.location.host || '127.0.0.1:19876';
+      ws = new WebSocket('ws://' + host);
+
+      ws.onopen = () => {
+        initRecognition();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.command === 'start') {
+            if (msg.lang) {
+              currentLang = msg.lang;
+              if (recognition) recognition.lang = currentLang;
+            }
+            isListening = true;
+            try {
+              recognition.start();
+            } catch (err) {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'speech_error', error: err.message }));
+              }
+            }
+          } else if (msg.command === 'stop') {
+            isListening = false;
+            try {
+              recognition.stop();
+            } catch (err) {}
+          }
+        } catch (e) {
+          console.error("Message parse error:", e);
+        }
+      };
+
+      ws.onclose = () => {
+        setTimeout(connectWS, 1500);
+      };
+    }
+
+    window.onload = connectWS;
+  </script>
+</body>
+</html>

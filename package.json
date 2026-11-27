@@ -1,0 +1,30 @@
+{
+  "name": "voxkey",
+  "version": "0.0.5",
+  "description": "VoxKey: Voice-Enabled Desktop Virtual Keyboard with real-time speech-to-text",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:minimized": "electron . --minimized",
+    "test": "node --test test/unit/*.test.js test/integration/*.test.js",
+    "bump:patch": "node -e \"const pkg = require('./package.json'); const parts = pkg.version.split('.').map(Number); parts[2]++; pkg.version = parts.join('.'); require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)); console.log('Bumped to ' + pkg.version);\"",
+    "bump:minor": "node -e \"const pkg = require('./package.json'); const parts = pkg.version.split('.').map(Number); parts[1]++; parts[2]=0; pkg.version = parts.join('.'); require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)); console.log('Bumped to ' + pkg.version);\"",
+    "build:injector": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /target:exe /out:bin\\injector.exe native\\injector.cs"
+  },
+  "keywords": [
+    "voxkey",
+    "voice-typing",
+    "on-screen-keyboard",
+    "electron",
+    "speech-to-text"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "simple-keyboard": "^3.8.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
