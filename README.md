@@ -135,6 +135,7 @@ npm run start:minimized   # start hidden in the tray / menu bar
 
 npm run check             # syntax check and tests
 npm run dist              # build an installer for this system into ./dist
+npm run icons             # redraw the app and tray icons in ./assets
 ./install.sh --from-source   # macOS: build and install into /Applications
 ```
 

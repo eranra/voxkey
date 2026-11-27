@@ -47,6 +47,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **New icon:** the waveform logo on a dark rounded square (the same shape as Big Eyes) with transparent corners,
+  instead of a white square. The macOS menu bar uses a template icon that follows light and dark mode, and
+  Windows uses a colored tray icon. `npm run icons` draws all of them (`scripts/make-icons.js`).
 - The keyboard window runs without Node.js access, with context isolation and a small preload API.
   Pages have a Content Security Policy.
 - Electron 33 → 44.9.0. Removed the unused `simple-keyboard` dependency.

@@ -1,6 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { buildTrayMenuModel, toMenuTemplate, TRAY_ICON_SIZE } = require('../../src/trayManager');
+const fs = require('fs');
+const { buildTrayMenuModel, toMenuTemplate, trayIconFile } = require('../../src/trayManager');
 
 describe('tray menu', () => {
   it('has keyboard, voice, About and update items', () => {
@@ -32,7 +33,12 @@ describe('tray menu', () => {
     assert.deepStrictEqual(ran, ['about', 'toggleAutoUpdate']);
   });
 
-  it('uses a small icon, not the 1024 px app icon', () => {
-    assert.ok(TRAY_ICON_SIZE <= 32);
+  it('uses a small tray icon for each system, not the 1024 px app icon', () => {
+    assert.match(trayIconFile('darwin'), /trayTemplate\.png$/);
+    assert.match(trayIconFile('win32'), /[\\/]tray\.png$/);
+    for (const file of [trayIconFile('darwin'), trayIconFile('win32')]) {
+      assert.ok(fs.existsSync(file), file);
+      assert.ok(fs.existsSync(file.replace('.png', '@2x.png')), `${file} @2x`);
+    }
   });
 });
