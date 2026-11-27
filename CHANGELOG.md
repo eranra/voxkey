@@ -3,6 +3,13 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Compact mode button:** a mic in a pill (the compact floating bar in miniature) instead of a bare down chevron.
+  The button now shows its destination, like the keyboard icon that expands back from compact mode.
+
 ## [0.1.1] - 2026-11-27
 
 The first release with installers for Windows and macOS. Version 0.1.0 was not published; its changes are

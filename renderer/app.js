@@ -142,8 +142,8 @@ minimizeBtn.onclick = () => {
     compactIcon.innerHTML = '<path fill="currentColor" d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/>';
     minimizeBtn.title = "Expand to Full Keyboard";
   } else {
-    // Down chevron for compacting
-    compactIcon.innerHTML = '<path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/>';
+    // Mic in a pill: the compact floating bar in miniature
+    compactIcon.innerHTML = '<path fill="currentColor" fill-rule="evenodd" d="M9 4h6a8 8 0 0 1 8 8 8 8 0 0 1-8 8H9a8 8 0 0 1-8-8 8 8 0 0 1 8-8zm0 2a6 6 0 0 0-6 6 6 6 0 0 0 6 6h6a6 6 0 0 0 6-6 6 6 0 0 0-6-6H9z"/><g transform="translate(6 6.25) scale(0.5)"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path fill="currentColor" d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></g>';
     minimizeBtn.title = "Toggle Compact Floating Mode";
   }
 
