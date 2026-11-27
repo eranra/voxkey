@@ -10,7 +10,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - **A second microphone behavior: stop after silence.** *Voice Typing Mode* in the tray menu now offers
   *Toggle* (the previous behavior: on until you press the mic or F8 again) and *Stops after silence* (press
   once; VoxKey stops by itself about two seconds after you stop speaking). Nothing stops before the first
-  speech, so you can pause before you start talking. A small clock badge on the microphone button marks the
+  speech, so you can pause before you start talking. Chrome restarting its recognizer mid-dictation does not
+  reset that clock, and a microphone that stays loud for about ten seconds without any recognized speech
+  (a noisy room) ends the recording too. A small clock badge on the microphone button marks the
   mode, and the setting is remembered between sessions.
 - **The microphone indicator follows your voice.** While recording, the microphone glyph is replaced by four
   level bars that grow and shrink with the live loudness of your voice, and the ring around the button scales

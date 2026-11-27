@@ -137,6 +137,7 @@ function applyVoiceMode(mode) {
   micBtn.title = stopsByItself
     ? 'Voice Typing (F8) — stops automatically after silence'
     : 'Voice Typing (F8)';
+  micBtn.setAttribute('aria-label', stopsByItself ? 'Voice typing, stops after silence' : 'Voice typing');
 }
 
 api.onVoiceMode(applyVoiceMode);

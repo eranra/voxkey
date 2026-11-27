@@ -27,7 +27,11 @@ The tray menu's **Voice Typing Mode** offers two behaviors, saved with the other
   listening (`getUserMedia` + `AnalyserNode`, separate from the Web Speech API) and reports `audio_level`;
   recognized text counts as speech too. `src/speechServer.js` stops the recording after 2 seconds without
   speech, but never before speech was heard at all — so a pause before you start speaking does not end it.
-  If the level measuring fails, dictation still works and silence detection falls back to speech results.
+  A `listening` confirmation that arrives while already recording (Chrome restarts its recognizer after a
+  pause) is not a new recording, so it does not restart that clock. A microphone that stays loud for about
+  10 seconds without any recognized speech counts as noise, and the recording then ends too — without this
+  guard, a noisy room would keep it on forever. If the level measuring fails, dictation still works and
+  silence detection falls back to speech results.
 
 The same levels drive the keyboard's microphone indicator: while recording, four bars replace the microphone
 glyph and follow the live loudness, and the ring around the button scales with the voice. Without level data,

@@ -2,7 +2,7 @@
 // speech was heard, and never in plain toggle mode. Levels and speech results both count as speech.
 const { describe, it, after } = require('node:test');
 const assert = require('node:assert');
-const { SpeechServer, SILENCE_TIMEOUT_MS, VOICE_LEVEL_THRESHOLD } = require('../../src/speechServer');
+const { SpeechServer, SILENCE_TIMEOUT_MS, VOICE_LEVEL_THRESHOLD, LOUD_NOISE_TIMEOUT_MS } = require('../../src/speechServer');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -34,6 +34,7 @@ describe('stop after silence', () => {
   it('defaults are a couple of seconds and a low speech threshold', () => {
     assert.ok(SILENCE_TIMEOUT_MS >= 1000 && SILENCE_TIMEOUT_MS <= 4000, String(SILENCE_TIMEOUT_MS));
     assert.ok(VOICE_LEVEL_THRESHOLD > 0 && VOICE_LEVEL_THRESHOLD < 0.5, String(VOICE_LEVEL_THRESHOLD));
+    assert.ok(LOUD_NOISE_TIMEOUT_MS >= 5000 && LOUD_NOISE_TIMEOUT_MS <= 30000, String(LOUD_NOISE_TIMEOUT_MS));
   });
 
   it('stops by itself after speech followed by silence', async () => {
@@ -98,6 +99,60 @@ describe('stop after silence', () => {
     server.handleMessage({ type: 'audio_level', level: 0.6 });
     await sleep(600);
     assert.strictEqual(server.isRecording, false, 'now stops after silence');
+  });
+
+  it('switching back to toggle while recording stops the silence clock', async () => {
+    const { server } = makeServer();
+    server.handleMessage({ type: 'status', status: 'listening' });
+    server.handleMessage({ type: 'audio_level', level: 0.6 });
+    server.setVoiceMode('toggle');
+    await sleep(600);
+    assert.strictEqual(server.isRecording, true, 'no auto-stop in toggle mode');
+    assert.strictEqual(server.silenceTimer, null);
+    server.toggleVoice();
+  });
+
+  it('a recognizer restart during the silence window does not disarm the auto-stop', async () => {
+    const { server } = makeServer();
+    server.handleMessage({ type: 'status', status: 'listening' });
+    server.handleMessage({ type: 'audio_level', level: 0.6 }); // the user speaks
+    // Chrome ends recognition after a pause and the bridge restarts it, which confirms
+    // "listening" again. That is not a new recording, so the silence clock must keep running.
+    server.handleMessage({ type: 'status', status: 'listening' });
+    await sleep(600);
+    assert.strictEqual(server.isRecording, false, 'still stops after silence despite the restart');
+  });
+
+  it('stops when the microphone stays loud but nothing is recognized (noise)', async () => {
+    const { server } = makeServer({ loudNoiseMs: 300 });
+    server.handleMessage({ type: 'status', status: 'listening' });
+    const start = Date.now();
+    while (Date.now() - start < 600 && server.isRecording) {
+      server.handleMessage({ type: 'audio_level', level: 0.5 }); // constant loud noise, no text
+      await sleep(25);
+    }
+    assert.strictEqual(server.isRecording, false, 'loud noise with no recognized speech stops the recording');
+  });
+
+  it('a quiet pause before speaking is not treated as noise', async () => {
+    const { server } = makeServer({ loudNoiseMs: 300 });
+    server.handleMessage({ type: 'status', status: 'listening' });
+    await sleep(450); // quiet: no levels at all, no speech yet
+    assert.strictEqual(server.isRecording, true, 'the noise guard needs loud audio; quiet does not stop it');
+    server.toggleVoice();
+  });
+
+  it('recognized speech keeps a loud recording alive (the noise guard only fires without text)', async () => {
+    const { server } = makeServer({ loudNoiseMs: 300 });
+    server.handleMessage({ type: 'status', status: 'listening' });
+    const start = Date.now();
+    while (Date.now() - start < 450 && server.isRecording) {
+      server.handleMessage({ type: 'audio_level', level: 0.5 });
+      server.handleMessage({ type: 'speech_result', interim: 'still talking', final: '' });
+      await sleep(25);
+    }
+    assert.strictEqual(server.isRecording, true, 'text keeps arriving, so it keeps listening');
+    server.toggleVoice();
   });
 
   it('an unknown mode is ignored', () => {

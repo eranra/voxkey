@@ -19,6 +19,10 @@ const VOICE_LEVEL_THRESHOLD = 0.1;
 const SILENCE_TIMEOUT_MS = 2000;
 /** How often the silence clock is checked while recording. */
 const SILENCE_CHECK_INTERVAL_MS = 250;
+/** A microphone this loud for this long, with no recognized speech, is noise; the recording then ends. */
+const LOUD_NOISE_TIMEOUT_MS = 10000;
+/** Levels arrive ten times a second; loud audio seen within this time counts as still going on. */
+const LOUD_AUDIO_RECENT_MS = 1000;
 
 /**
  * Command-line options for the Chrome window that runs the speech bridge (stt.html).
@@ -152,9 +156,12 @@ class SpeechServer {
     this.silenceMs = options.silenceMs || SILENCE_TIMEOUT_MS;
     this.silenceCheckMs = options.silenceCheckMs || SILENCE_CHECK_INTERVAL_MS;
     this.voiceLevelThreshold = options.voiceLevelThreshold || VOICE_LEVEL_THRESHOLD;
+    this.loudNoiseMs = options.loudNoiseMs || LOUD_NOISE_TIMEOUT_MS;
     this.silenceTimer = null;
     this.hasVoice = false;
     this.lastVoiceAt = 0;
+    this.lastLoudAt = 0;
+    this.lastSpeechResultAt = 0;
 
     // Callbacks
     this.onSpeechResult = options.onSpeechResult || (() => {});
@@ -272,13 +279,20 @@ class SpeechServer {
   handleMessage(data) {
     if (data.type === 'status') {
       this.clearStartTimer();
+      const wasRecording = this.isRecording;
       this.isRecording = data.status === 'listening';
-      if (this.isRecording) this.startVoiceTracking();
-      else this.stopVoiceTracking();
+      // A "listening" while already recording is Chrome restarting its recognizer (it ends the
+      // session after a pause or about a minute). That is not a new recording, so the silence
+      // clock keeps running instead of starting over.
+      if (this.isRecording && !wasRecording) this.startVoiceTracking();
+      else if (!this.isRecording) this.stopVoiceTracking();
       this.onSpeechStatus(data.status);
     } else if (data.type === 'speech_result') {
       // Recognized text is also proof that the user is speaking; it drives silence detection too.
-      if (this.isRecording && (data.interim || data.final)) this.markVoiceActivity();
+      if (this.isRecording && (data.interim || data.final)) {
+        this.markVoiceActivity();
+        this.lastSpeechResultAt = Date.now();
+      }
       this.onSpeechResult(data);
     } else if (data.type === 'speech_error') {
       this.clearStartTimer();
@@ -290,8 +304,13 @@ class SpeechServer {
       this.bridgeVisible = data.visible;
       if (!data.visible) console.warn('[SpeechServer] The speech bridge page is hidden; Chrome delivers no results while hidden.');
     } else if (data.type === 'audio_level') {
-      this.onAudioLevel(data.level);
-      if (this.isRecording && data.level >= this.voiceLevelThreshold) this.markVoiceActivity();
+      if (this.isRecording) {
+        this.onAudioLevel(data.level);
+        if (data.level >= this.voiceLevelThreshold) {
+          this.markVoiceActivity();
+          this.lastLoudAt = Date.now();
+        }
+      }
     }
   }
 
@@ -301,10 +320,12 @@ class SpeechServer {
     this.lastVoiceAt = Date.now();
   }
 
-  /** Starts the silence clock for a recording. Nothing stops before the first speech is heard. */
+  /** Starts the silence clock for a fresh recording. Nothing stops before the first speech is heard. */
   startVoiceTracking() {
     this.hasVoice = false;
     this.lastVoiceAt = Date.now();
+    this.lastLoudAt = 0;
+    this.lastSpeechResultAt = Date.now();
     if (this.voiceMode !== 'until-silence' || this.silenceTimer) return;
     this.silenceTimer = setInterval(() => this.checkSilence(), this.silenceCheckMs);
   }
@@ -315,9 +336,21 @@ class SpeechServer {
   }
 
   checkSilence() {
-    if (!this.isRecording || this.voiceMode !== 'until-silence' || !this.hasVoice) return;
-    if (Date.now() - this.lastVoiceAt >= this.silenceMs) {
+    if (!this.isRecording || this.voiceMode !== 'until-silence') return;
+    const now = Date.now();
+    if (this.hasVoice && now - this.lastVoiceAt >= this.silenceMs) {
       console.log('[SpeechServer] Silence after speech; stopping voice recording.');
+      this.stopRecording();
+      return;
+    }
+    // A microphone that stays loud without any recognized speech is noise, not dictation;
+    // without this guard, a noisy room would keep the recording on forever.
+    if (
+      this.lastLoudAt &&
+      now - this.lastLoudAt <= LOUD_AUDIO_RECENT_MS &&
+      now - this.lastSpeechResultAt >= this.loudNoiseMs
+    ) {
+      console.log('[SpeechServer] Loud microphone but no recognized speech; stopping voice recording.');
       this.stopRecording();
     }
   }
@@ -492,6 +525,7 @@ module.exports = {
   START_TIMEOUT_MS,
   VOICE_LEVEL_THRESHOLD,
   SILENCE_TIMEOUT_MS,
+  LOUD_NOISE_TIMEOUT_MS,
   SpeechServer,
   bridgeArgs,
   allowedOrigins,

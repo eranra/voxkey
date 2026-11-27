@@ -34,6 +34,9 @@ function makeEl(extra = {}) {
         this.children.push(child);
       },
       addEventListener() {},
+      setAttribute(name, value) {
+        this[name] = value;
+      },
       querySelectorAll: () => []
     },
     extra
@@ -145,12 +148,14 @@ describe('mic button', () => {
     const page = await settled(loadRendererPage({ voiceMode: 'until-silence' }));
     assert.strictEqual(page.micBtn.classList.contains('mode-until-silence'), true);
     assert.match(page.micBtn.title, /silence/);
+    assert.match(page.micBtn['aria-label'], /silence/, 'screen readers hear the mode too');
   });
 
   it('toggle mode keeps the plain icon', async () => {
     const page = await settled(loadRendererPage({ voiceMode: 'toggle' }));
     assert.strictEqual(page.micBtn.classList.contains('mode-until-silence'), false);
     assert.strictEqual(page.micBtn.title, 'Voice Typing (F8)');
+    assert.strictEqual(page.micBtn['aria-label'], 'Voice typing');
   });
 
   it('a mode change from the tray arrives live', async () => {
