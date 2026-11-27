@@ -6,6 +6,66 @@ const { spawn } = require('child_process');
 const { WebSocketServer } = require('ws');
 const { PORT, PATHS, APP_VERSION } = require('./config');
 
+/** Header that VoxKey's own instance checks send. A web page cannot add it without a CORS preflight, which we never allow. */
+const CLIENT_HEADER = 'x-voxkey-client';
+/** Longest text accepted in one speech message. */
+const MAX_TEXT_LENGTH = 5000;
+
+/** Origins a browser may use to talk to this server: only our own bridge page. */
+function allowedOrigins(port) {
+  return [`http://127.0.0.1:${port}`, `http://localhost:${port}`];
+}
+
+/**
+ * True when a request comes from VoxKey itself (our bridge page or another VoxKey process), not from
+ * some web page in the user's browser. Browsers always send `Origin` on WebSocket connections and
+ * `Sec-Fetch-Site` on modern requests; programs like Node.js send neither.
+ */
+function isTrustedRequest(req, port) {
+  const origin = req.headers.origin;
+  if (origin !== undefined && !allowedOrigins(port).includes(origin)) return false;
+  const site = req.headers['sec-fetch-site'];
+  if (site !== undefined && site !== 'same-origin' && site !== 'none') return false;
+  return true;
+}
+
+/** Places where Google Chrome is usually installed on Windows and macOS. */
+function chromeCandidates(env = process.env, home = os.homedir()) {
+  const programFiles = env.ProgramFiles || 'C:\\Program Files';
+  const programFilesX86 = env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+  const localAppData = env.LOCALAPPDATA || '';
+  const macApp = 'Google Chrome.app/Contents/MacOS/Google Chrome';
+  return [
+    path.win32.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.win32.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ...(localAppData ? [path.win32.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe')] : []),
+    path.posix.join('/Applications', macApp),
+    path.posix.join(home, 'Applications', macApp)
+  ];
+}
+
+/** Returns a valid bridge message, or null. Protects the main process from malformed data. */
+function parseBridgeMessage(raw) {
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+  const text = (v) => (typeof v === 'string' ? v.slice(0, MAX_TEXT_LENGTH) : '');
+  if (data.type === 'status' && typeof data.status === 'string') {
+    return { type: 'status', status: data.status };
+  }
+  if (data.type === 'speech_result') {
+    return { type: 'speech_result', interim: text(data.interim), final: text(data.final) };
+  }
+  if (data.type === 'speech_error') {
+    return { type: 'speech_error', error: text(String(data.error ?? 'unknown')) };
+  }
+  return null;
+}
+
 class SpeechServer {
   constructor(options = {}) {
     this.port = options.port || PORT;
@@ -23,50 +83,26 @@ class SpeechServer {
     this.onTakeoverRequest = options.onTakeoverRequest || (() => {});
     this.onShowRequest = options.onShowRequest || (() => {});
     this.onBridgeConnect = options.onBridgeConnect || (() => {});
+
+    // Replaceable in tests.
+    this.spawn = options.spawn || spawn;
+    this.fileExists = options.fileExists || fs.existsSync;
+    this.chromePaths = options.chromePaths || null;
   }
 
   start() {
     return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        // API Routes
-        if (req.url === '/api/status') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ version: APP_VERSION, pid: process.pid, recording: this.isRecording }));
-          return;
-        }
+      this.server = http.createServer((req, res) => this.handleHttp(req, res));
 
-        if (req.url && req.url.startsWith('/api/takeover')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, quitting: true }));
-          this.onTakeoverRequest();
-          return;
+      this.wss = new WebSocketServer({
+        server: this.server,
+        // Only our bridge page may connect. Any other web page could otherwise type into the user's apps.
+        verifyClient: ({ req }) => {
+          const ok = isTrustedRequest(req, this.port);
+          if (!ok) console.warn(`[SpeechServer] Refused WebSocket from origin ${req.headers.origin}`);
+          return ok;
         }
-
-        if (req.url === '/api/show') {
-          this.onShowRequest();
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true }));
-          return;
-        }
-
-        if (req.url === '/' || req.url === '/stt.html') {
-          fs.readFile(PATHS.sttHtml, (err, data) => {
-            if (err) {
-              res.writeHead(500);
-              res.end('Error loading stt.html');
-              return;
-            }
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(data);
-          });
-          return;
-        }
-
-        res.writeHead(404);
-        res.end();
       });
-
-      this.wss = new WebSocketServer({ server: this.server });
 
       this.wss.on('connection', (ws) => {
         this.clients.add(ws);
@@ -74,12 +110,9 @@ class SpeechServer {
         this.onBridgeConnect();
 
         ws.on('message', (message) => {
-          try {
-            const data = JSON.parse(message);
-            this.handleMessage(data);
-          } catch (e) {
-            console.error('[SpeechServer] JSON parse error:', e);
-          }
+          const data = parseBridgeMessage(message.toString());
+          if (data) this.handleMessage(data);
+          else console.warn('[SpeechServer] Ignored an invalid bridge message.');
         });
 
         ws.on('close', () => {
@@ -102,6 +135,56 @@ class SpeechServer {
         resolve();
       });
     });
+  }
+
+  handleHttp(req, res) {
+    const json = (status, body) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+    const url = (req.url || '').split('?')[0];
+
+    if (!isTrustedRequest(req, this.port)) {
+      json(403, { ok: false });
+      return;
+    }
+
+    if (url === '/api/status') {
+      json(200, { version: APP_VERSION, pid: process.pid, recording: this.isRecording });
+      return;
+    }
+
+    if (url === '/api/takeover' || url === '/api/show') {
+      // These change what the running app does, so they need the VoxKey header.
+      if (req.headers[CLIENT_HEADER] !== '1') {
+        json(403, { ok: false });
+        return;
+      }
+      if (url === '/api/takeover') {
+        json(200, { ok: true, quitting: true });
+        this.onTakeoverRequest();
+      } else {
+        this.onShowRequest();
+        json(200, { ok: true });
+      }
+      return;
+    }
+
+    if (url === '/' || url === '/stt.html') {
+      fs.readFile(PATHS.sttHtml, (err, data) => {
+        if (err) {
+          res.writeHead(500);
+          res.end('Error loading stt.html');
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(data);
+      });
+      return;
+    }
+
+    res.writeHead(404);
+    res.end();
   }
 
   handleMessage(data) {
@@ -135,19 +218,13 @@ class SpeechServer {
   }
 
   launchChromeBridge(onBridgeReady = null) {
-    const brandDir = ['G', 'o', 'o', 'g', 'l', 'e'].join('');
-    const progFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
-    const progFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-    const localAppData = process.env['LOCALAPPDATA'] || '';
+    if (this.chromeProcess) {
+      // Already started; it reconnects by itself. Starting a second copy would only add a process.
+      return true;
+    }
+    const chromePaths = this.chromePaths || chromeCandidates(process.env, os.homedir());
 
-    const chromePaths = [
-      path.join(progFiles, brandDir, 'Chrome', 'Application', 'chrome.exe'),
-      path.join(progFilesX86, brandDir, 'Chrome', 'Application', 'chrome.exe'),
-      path.join(localAppData, brandDir, 'Chrome', 'Application', 'chrome.exe'),
-      `/Applications/${brandDir} Chrome.app/Contents/MacOS/${brandDir} Chrome`
-    ];
-
-    const chromeExe = chromePaths.find(p => fs.existsSync(p));
+    const chromeExe = chromePaths.find(p => this.fileExists(p));
     if (!chromeExe) {
       console.warn('[SpeechServer] Speech runtime browser not found. Voice typing bridge unavailable.');
       return false;
@@ -169,11 +246,19 @@ class SpeechServer {
     ];
 
     console.log('[SpeechServer] Spawning isolated speech bridge...');
-    this.chromeProcess = spawn(chromeExe, args, { stdio: 'ignore' });
+    const child = this.spawn(chromeExe, args, { stdio: 'ignore' });
+    this.chromeProcess = child;
 
-    this.chromeProcess.on('exit', (code) => {
+    const clear = () => {
+      if (this.chromeProcess === child) this.chromeProcess = null;
+    };
+    child.on('exit', (code) => {
       console.log(`[SpeechServer] Speech bridge process exited (${code})`);
-      this.chromeProcess = null;
+      clear();
+    });
+    child.on('error', (err) => {
+      console.warn('[SpeechServer] Could not start the speech bridge:', err.message);
+      clear();
     });
 
     if (onBridgeReady) {
@@ -242,5 +327,11 @@ class SpeechServer {
 }
 
 module.exports = {
-  SpeechServer
+  CLIENT_HEADER,
+  MAX_TEXT_LENGTH,
+  SpeechServer,
+  allowedOrigins,
+  chromeCandidates,
+  isTrustedRequest,
+  parseBridgeMessage
 };

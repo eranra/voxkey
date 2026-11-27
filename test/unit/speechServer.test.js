@@ -2,7 +2,7 @@ const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
 const http = require('http');
 const { WebSocket } = require('ws');
-const { SpeechServer } = require('../../src/speechServer');
+const { SpeechServer, CLIENT_HEADER } = require('../../src/speechServer');
 const { APP_VERSION } = require('../../src/config');
 
 describe('SpeechServer Unit & Integration Tests', () => {
@@ -45,7 +45,7 @@ describe('SpeechServer Unit & Integration Tests', () => {
   it('GET /api/show should trigger show callback', async () => {
     showCalled = false;
     const res = await new Promise((resolve, reject) => {
-      http.get(`http://127.0.0.1:${TEST_PORT}/api/show`, (res) => {
+      http.get(`http://127.0.0.1:${TEST_PORT}/api/show`, { headers: { [CLIENT_HEADER]: '1' } }, (res) => {
         let raw = '';
         res.on('data', chunk => raw += chunk);
         res.on('end', () => resolve(JSON.parse(raw)));
@@ -59,7 +59,7 @@ describe('SpeechServer Unit & Integration Tests', () => {
   it('GET /api/takeover should trigger takeover callback', async () => {
     takeoverCalled = false;
     const res = await new Promise((resolve, reject) => {
-      http.get(`http://127.0.0.1:${TEST_PORT}/api/takeover`, (res) => {
+      http.get(`http://127.0.0.1:${TEST_PORT}/api/takeover`, { headers: { [CLIENT_HEADER]: '1' } }, (res) => {
         let raw = '';
         res.on('data', chunk => raw += chunk);
         res.on('end', () => resolve(JSON.parse(raw)));

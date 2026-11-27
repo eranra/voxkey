@@ -76,3 +76,27 @@ describe('InstanceManager Unit Tests', () => {
     assert.strictEqual(quitCalled, true);
   });
 });
+
+describe('InstanceManager takeover', () => {
+  it('waits until the old copy releases the lock', async () => {
+    let tries = 0;
+    const app = { requestSingleInstanceLock: () => ++tries >= 3 };
+    const mgr = new InstanceManager(1, '0.0.3');
+    assert.strictEqual(await mgr.acquireLockAfterTakeover(app, { attempts: 5, delayMs: 1 }), true);
+    assert.strictEqual(tries, 3);
+  });
+
+  it('gives up when the old copy never exits', async () => {
+    const app = { requestSingleInstanceLock: () => false };
+    const mgr = new InstanceManager(1, '0.0.3');
+    assert.strictEqual(await mgr.acquireLockAfterTakeover(app, { attempts: 3, delayMs: 1 }), false);
+  });
+
+  it('quits when nothing answers on the port', async () => {
+    let quit = false;
+    const mgr = new InstanceManager(1, '0.0.3'); // port 1: nothing listens there
+    const result = await mgr.handleDuplicate({ quit: () => (quit = true) }, []);
+    assert.deepStrictEqual(result, { shouldQuit: true, tookOver: false });
+    assert.strictEqual(quit, true);
+  });
+});
