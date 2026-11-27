@@ -87,6 +87,11 @@ body {
   overflow: hidden;
 }
 
+.app-logo {
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+}
+
 .app-logo,
 .g-logo {
   display: flex;

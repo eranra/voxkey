@@ -1,0 +1,70 @@
+# Packaging for macOS and Windows. Run `npm run dist` (current system), `npm run dist:mac` or `npm run dist:win`.
+# Only the files listed under `files` go into the app. Do not add a `files` list under mac: or win:;
+# it replaces this list instead of adding to it.
+appId: io.github.eranra.voxkey
+productName: VoxKey
+copyright: Copyright © 2026 Eran Raichstein and contributors
+directories:
+  output: dist
+  buildResources: assets
+files:
+  - main.js
+  - package.json
+  - stt.html
+  - src/**/*
+  - renderer/**/*
+  - assets/**/*
+  - bin/**/*
+  - '!**/*.map'
+asar: true
+# Programs started with spawn() cannot run from inside app.asar. See unpackedPath() in src/config.js.
+asarUnpack:
+  - bin/**
+icon: assets/icon.png
+# Where releases live. electron-builder uploads there, and writes app-update.yml into the app so
+# electron-updater checks the same place.
+publish:
+  - provider: github
+    owner: eranra
+    repo: voxkey
+    releaseType: draft
+artifactName: VoxKey-${version}-${arch}.${ext}
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  # "-" = ad-hoc signature. The app runs, and macOS remembers its permissions, without an Apple developer account.
+  # For notarized releases set CSC_LINK / CSC_KEY_PASSWORD (and APPLE_ID ...) and change this to null.
+  identity: '-'
+  hardenedRuntime: true
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  extendInfo:
+    NSAppleEventsUsageDescription: >-
+      VoxKey sends keystrokes through System Events, to type the keys you press and the words you dictate
+      into the app you are using.
+
+dmg:
+  title: VoxKey
+  # The usual "drag the app onto Applications" window.
+  contents:
+    - x: 150
+      y: 190
+    - x: 410
+      y: 190
+      type: link
+      path: /Applications
+  window:
+    width: 560
+    height: 380
+
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+nsis:
+  oneClick: true
+  perMachine: false
+  artifactName: VoxKey-Setup-${version}.${ext}

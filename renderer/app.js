@@ -1,4 +1,5 @@
-const { ipcRenderer } = require('electron');
+// `window.voxkey` comes from preload.js. This page has no Node.js access.
+const api = window.voxkey;
 
 // Layout definitions
 const LAYOUTS = {
@@ -95,7 +96,7 @@ function renderKeyboard() {
 
 function onKeyClick(char) {
   console.log('[Renderer] Key clicked:', char);
-  ipcRenderer.send('inject-text', char);
+  api.injectText(char);
   if (isShift && currentLayout === 'upper') {
     isShift = false;
     currentLayout = 'lower';
@@ -105,7 +106,7 @@ function onKeyClick(char) {
 
 function onActionClick(action) {
   console.log('[Renderer] Action clicked:', action);
-  ipcRenderer.send('inject-key', action);
+  api.injectKey(action);
 }
 
 function toggleShift() {
@@ -122,11 +123,11 @@ function switchLayout(layoutName) {
 
 // Voice Typing Controls
 micBtn.onclick = () => {
-  ipcRenderer.send('toggle-voice');
+  api.toggleVoice();
 };
 
 langSelect.onchange = (e) => {
-  ipcRenderer.send('set-lang', e.target.value);
+  api.setLanguage(e.target.value);
   renderKeyboard();
 };
 
@@ -146,21 +147,21 @@ minimizeBtn.onclick = () => {
     minimizeBtn.title = "Toggle Compact Floating Mode";
   }
 
-  ipcRenderer.send('resize-window', { collapsed: isCollapsed });
+  api.resizeWindow(isCollapsed);
 };
 
 if (hideBtn) {
   hideBtn.onclick = () => {
-    ipcRenderer.send('hide-to-tray');
+    api.hideToTray();
   };
 }
 
 closeBtn.onclick = () => {
-  ipcRenderer.send('close-app');
+  api.closeApp();
 };
 
 // Listen for speech status and text from main process
-ipcRenderer.on('voice-state', (event, state) => {
+api.onVoiceState((state) => {
   isRecording = (state === 'listening');
   micBtn.classList.toggle('recording', isRecording);
 
@@ -174,7 +175,7 @@ ipcRenderer.on('voice-state', (event, state) => {
   }
 });
 
-ipcRenderer.on('speech-update', (event, data) => {
+api.onSpeechUpdate((data) => {
   if (data.interim) {
     transcriptPlaceholder.style.display = 'none';
     transcriptInterim.innerText = data.interim;
@@ -190,14 +191,19 @@ ipcRenderer.on('speech-update', (event, data) => {
   }
 });
 
-// Update dynamic version tooltip
-try {
-  const pkg = require('../package.json');
-  const appLogo = document.getElementById('app-logo') || document.getElementById('g-logo');
-  if (appLogo && pkg.version) {
-    appLogo.title = `VoxKey v${pkg.version}`;
+// Version tooltip, and the language saved from the last session.
+api.getInfo().then((info) => {
+  const appLogo = document.getElementById('app-logo');
+  if (appLogo) appLogo.title = `VoxKey v${info.version}`;
+  if (info.language && [...langSelect.options].some((o) => o.value === info.language)) {
+    langSelect.value = info.language;
+    renderKeyboard();
   }
-} catch (e) {}
+});
+
+// Clicking the logo opens the About window.
+const appLogoEl = document.getElementById('app-logo');
+if (appLogoEl) appLogoEl.addEventListener('click', () => api.openAbout());
 
 // Initial render
 renderKeyboard();
