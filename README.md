@@ -76,6 +76,7 @@ Then give VoxKey the [permissions](#-macos-permissions) it needs to type.
 | Action | How |
 | :--- | :--- |
 | Start or stop voice typing, from any app | **F8**, or **Ctrl + Shift + Space** (**Cmd + Shift + Space** on macOS), or the microphone button |
+| Choose the microphone behavior | **Voice Typing Mode** in the tray menu: *Toggle* (on until you press again) or *Stops after silence* (stops by itself about two seconds after you stop speaking). The mic button shows a small clock badge in the second mode. |
 | Choose the dictation language | The language list in the keyboard header (EN, ES, FR, DE, HE, AR, RU, ZH). VoxKey remembers it. |
 | Collapse to a small floating pill | Chevron **▼** |
 | Expand the pill back to the keyboard | Keyboard **⌨** |

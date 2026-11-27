@@ -203,16 +203,53 @@ body {
   bottom: -4px;
   border-radius: 50%;
   border: 2px solid #ea4335;
-  animation: wave 1.2s infinite ease-out;
+  pointer-events: none;
+  will-change: transform, opacity;
 }
 
 .mic-button.recording .mic-wave {
   display: block;
+  /* No keyframe animation: app.js scales the ring with the live audio level. */
 }
 
-@keyframes wave {
-  0% { transform: scale(1); opacity: 1; }
-  100% { transform: scale(1.6); opacity: 0; }
+/* While recording, live level bars replace the microphone glyph. */
+.mic-levels {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.mic-button.recording .mic-levels {
+  display: flex;
+}
+
+.mic-button.recording .mic-icon {
+  display: none;
+}
+
+.level-bar {
+  width: 3px;
+  height: 18px;
+  border-radius: 1.5px;
+  background: #ffffff;
+  transform: scaleY(0.2);
+  transform-origin: center;
+  will-change: transform;
+}
+
+/* Clock badge in the corner: this mode stops by itself after silence. */
+.mic-mode-badge {
+  display: none;
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  pointer-events: none;
+}
+
+.mic-button.mode-until-silence .mic-mode-badge {
+  display: block;
 }
 
 .header-action-btn {

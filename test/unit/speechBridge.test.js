@@ -21,10 +21,12 @@ const sttScript = (() => {
   return scripts[0];
 })();
 
-function loadBridgePage({ hidden = false } = {}) {
+function loadBridgePage({ hidden = false, audioLevel = null } = {}) {
   const sent = [];
   const recognitions = [];
   const docListeners = {};
+  // State of the microphone measurement (only used when audioLevel is given).
+  const micState = { timers: [], tracksStopped: 0, contextsClosed: 0 };
 
   class FakeRecognition {
     constructor() {
@@ -72,11 +74,53 @@ function loadBridgePage({ hidden = false } = {}) {
   const sandbox = {
     console: { log() {}, error() {}, warn() {} },
     setTimeout: () => 0,
+    setInterval: (fn) => {
+      micState.timers.push(fn);
+      return micState.timers.length;
+    },
+    clearInterval: () => {
+      micState.timers.length = 0;
+    },
     document,
     location: { host: '127.0.0.1:19876' },
     WebSocket: FakeSocket,
     webkitSpeechRecognition: FakeRecognition
   };
+
+  if (audioLevel !== null) {
+    // The browser side of the level measurement: a microphone stream and an analyser
+    // whose samples all read `audioLevel` (128 = silence, 148 = a loud constant tone).
+    sandbox.navigator = {
+      mediaDevices: {
+        getUserMedia: () =>
+          Promise.resolve({
+            getTracks: () => [{ stop: () => micState.tracksStopped++ }]
+          })
+      }
+    };
+    class FakeAudioContext {
+      resume() {
+        return Promise.resolve();
+      }
+      close() {
+        micState.contextsClosed++;
+        return Promise.resolve();
+      }
+      createAnalyser() {
+        return {
+          fftSize: 0,
+          getByteTimeDomainData(buf) {
+            for (let i = 0; i < buf.length; i++) buf[i] = audioLevel;
+          }
+        };
+      }
+      createMediaStreamSource() {
+        return { connect() {} };
+      }
+    }
+    sandbox.AudioContext = FakeAudioContext;
+  }
+
   sandbox.window = sandbox;
   sandbox.window.moveTo = () => {};
   sandbox.window.resizeTo = () => {};
@@ -85,6 +129,7 @@ function loadBridgePage({ hidden = false } = {}) {
     sent,
     recognitions,
     socket: null,
+    micState,
     /** Opens the WebSocket, as the browser would. */
     connect() {
       sandbox.window.onload();
@@ -99,6 +144,10 @@ function loadBridgePage({ hidden = false } = {}) {
       document.hidden = value;
       document.visibilityState = value ? 'hidden' : 'visible';
       if (docListeners.visibilitychange) docListeners.visibilitychange();
+    },
+    /** Runs the level timer once, as the browser would every 100 ms. */
+    tickLevel() {
+      for (const fn of micState.timers) fn();
     },
     get recognition() {
       return recognitions[recognitions.length - 1];
@@ -211,6 +260,43 @@ describe('bridge page', () => {
     const result = (text, isFinal) => Object.assign([{ transcript: text }], { isFinal });
     page.recognition.onresult({ resultIndex: 0, results: [result('hello world', true), result('and mo', false)] });
     assert.deepStrictEqual(page.sent.at(-1), { type: 'speech_result', interim: 'and mo', final: 'hello world' });
+  });
+
+  it('sends microphone levels while listening, and releases the microphone on stop', async () => {
+    const page = loadBridgePage({ audioLevel: 148 }); // a loud constant tone
+    page.connect();
+    page.receive({ command: 'start' });
+    await new Promise((r) => setTimeout(r, 0)); // getUserMedia resolves
+    page.tickLevel();
+    // Every sample reads 148, so the level is the RMS of (148-128)/128 = 0.15625, scaled by 3.
+    assert.deepStrictEqual(page.sent.filter((m) => m.type === 'audio_level').at(-1), { type: 'audio_level', level: 0.46875 });
+    assert.strictEqual(page.micState.tracksStopped, 0, 'the microphone stays open while listening');
+
+    page.receive({ command: 'stop' });
+    assert.strictEqual(page.micState.timers.length, 0, 'the level timer stops');
+    assert.strictEqual(page.micState.tracksStopped, 1, 'the microphone stream is released');
+    assert.strictEqual(page.micState.contextsClosed, 1, 'the audio context is closed');
+    page.tickLevel(); // must not crash or send anything
+    assert.ok(!page.sent.slice(-1).some((m) => m.type === 'audio_level'));
+  });
+
+  it('a quiet microphone reports a level of zero', async () => {
+    const page = loadBridgePage({ audioLevel: 128 }); // perfect silence
+    page.connect();
+    page.receive({ command: 'start' });
+    await new Promise((r) => setTimeout(r, 0));
+    page.tickLevel();
+    assert.deepStrictEqual(page.sent.filter((m) => m.type === 'audio_level').at(-1), { type: 'audio_level', level: 0 });
+  });
+
+  it('dictation works when the microphone cannot be measured', async () => {
+    const page = loadBridgePage(); // no navigator.mediaDevices: measurement unavailable
+    page.connect();
+    page.receive({ command: 'start' });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.strictEqual(page.recognition.running, true);
+    assert.deepStrictEqual(page.sent.at(-1), { type: 'status', status: 'listening' });
+    assert.ok(!page.sent.some((m) => m.type === 'audio_level'), 'no levels, but no failure either');
   });
 });
 

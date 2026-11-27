@@ -8,8 +8,13 @@ const DEFAULT_SETTINGS = Object.freeze({
   /** The newest version the user was already told about, so automatic checks tell only once. */
   lastAnnouncedVersion: null,
   /** Speech recognition language, for example "en-US". */
-  language: 'en-US'
+  language: 'en-US',
+  /** How the microphone behaves: 'toggle' stays on until pressed again, 'until-silence' stops by itself. */
+  voiceMode: 'toggle'
 });
+
+/** The two microphone behaviors. */
+const VOICE_MODES = ['toggle', 'until-silence'];
 
 /** Returns valid settings from any saved value. Unknown keys and wrong types fall back to the defaults. */
 function normalizeSettings(raw) {
@@ -19,7 +24,8 @@ function normalizeSettings(raw) {
     lastAnnouncedVersion: parseVersion(value.lastAnnouncedVersion) ? value.lastAnnouncedVersion : null,
     language: typeof value.language === 'string' && /^[a-z]{2,3}(-[A-Z]{2})?$/.test(value.language)
       ? value.language
-      : DEFAULT_SETTINGS.language
+      : DEFAULT_SETTINGS.language,
+    voiceMode: VOICE_MODES.includes(value.voiceMode) ? value.voiceMode : DEFAULT_SETTINGS.voiceMode
   };
 }
 
@@ -59,6 +65,7 @@ class SettingsStore {
 
 module.exports = {
   DEFAULT_SETTINGS,
+  VOICE_MODES,
   normalizeSettings,
   SettingsStore
 };
