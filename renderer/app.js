@@ -163,6 +163,7 @@ closeBtn.onclick = () => {
 // Listen for speech status and text from main process
 api.onVoiceState((state) => {
   isRecording = (state === 'listening');
+  if (isRecording) transcriptInterim.classList.remove('transcript-error');
   micBtn.classList.toggle('recording', isRecording);
 
   if (isRecording) {
@@ -189,6 +190,22 @@ api.onSpeechUpdate((data) => {
       }
     }, 2000);
   }
+});
+
+// Voice typing failed: show why, in the transcript area, for a few seconds.
+let voiceErrorTimer = null;
+api.onVoiceError((message) => {
+  transcriptPlaceholder.style.display = 'none';
+  transcriptInterim.innerText = message;
+  transcriptInterim.classList.add('transcript-error');
+  clearTimeout(voiceErrorTimer);
+  voiceErrorTimer = setTimeout(() => {
+    transcriptInterim.classList.remove('transcript-error');
+    if (!isRecording) {
+      transcriptInterim.innerText = '';
+      transcriptPlaceholder.style.display = 'inline';
+    }
+  }, 7000);
 });
 
 // Version tooltip, and the language saved from the last session.

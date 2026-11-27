@@ -42,6 +42,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - VoxKey could freeze after *Check for Updates…*: on macOS the result message is modal and blocks the app
   until it is closed, and the always-on-top keyboard covered it. Update messages now appear as a sheet on
   the About window, above the keyboard, and VoxKey keeps working while they are open.
+- **Voice typing showed "Listening" but typed nothing**, from time to time. Chrome delivers no speech
+  results while the bridge page is hidden, and on macOS it counts a window as hidden when other windows
+  cover it; the tiny bridge window was often covered. Chrome now starts with options that keep a covered
+  window running (`--disable-backgrounding-occluded-windows` and related). In addition:
+  - the keyboard shows "Listening" only after the bridge confirms that recognition runs; if it does not
+    confirm within 4 seconds, VoxKey shows an error and restarts the bridge;
+  - the bridge refuses to start while it is really hidden (for example minimized) and says why;
+  - errors are shown in the keyboard (microphone blocked, no network, no microphone, ...), and a
+    `no-speech` pause is no longer treated as an error;
+  - a reconnect of the bridge no longer creates a second recognizer.
 - *Check for Updates…* did nothing when an automatic check was running at the same time. The manual
   request now waits for that check and shows its result.
 

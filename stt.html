@@ -17,21 +17,38 @@
   <div id="log" style="display:none;"></div>
 
   <script>
-    // Keep window out of sight
+    // VoxKey speech bridge. Runs in a small Chrome window (Electron has no speech recognition).
+    // VoxKey sends {command: 'start', lang} and {command: 'stop'}; this page answers with
+    // status / speech_result / speech_error / bridge_state messages. See docs/architecture.md.
+    //
+    // Chrome delivers no speech results while this page is hidden. VoxKey starts Chrome with options
+    // that keep a covered window "visible"; if the page is still hidden (for example minimized), it
+    // refuses to start and says so, instead of pretending to listen.
+
+    // Keep the window out of sight
     try {
       window.moveTo(-10000, -10000);
       window.resizeTo(1, 1);
     } catch (e) {}
 
     let ws;
-    let recognition;
-    let isListening = false;
+    let recognition = null;
+    let isListening = false; // the user wants to dictate (between "start" and "stop")
     let currentLang = 'en-US';
 
+    // Errors after which Chrome simply restarts listening; they are not worth telling the user.
+    const QUIET_ERRORS = ['no-speech', 'aborted'];
+
+    function send(msg) {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    }
+
     function initRecognition() {
+      // One recognizer for the life of the page. A WebSocket reconnect must not create a second one.
+      if (recognition) return;
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        console.error("Web Speech API not supported.");
+        console.error('Web Speech API not supported.');
         return;
       }
 
@@ -42,52 +59,72 @@
       recognition.lang = currentLang;
 
       recognition.onstart = () => {
-        isListening = true;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'status', status: 'listening' }));
-        }
+        send({ type: 'status', status: 'listening' });
       };
 
       recognition.onresult = (event) => {
         let interimTranscript = '';
         let finalTranscript = '';
-
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const item = event.results[i];
-          if (item.isFinal) {
-            finalTranscript += item[0].transcript;
-          } else {
-            interimTranscript += item[0].transcript;
-          }
+          if (item.isFinal) finalTranscript += item[0].transcript;
+          else interimTranscript += item[0].transcript;
         }
-
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: 'speech_result',
-            interim: interimTranscript,
-            final: finalTranscript
-          }));
-        }
+        send({ type: 'speech_result', interim: interimTranscript, final: finalTranscript });
       };
 
       recognition.onerror = (event) => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'speech_error', error: event.error }));
-        }
+        if (QUIET_ERRORS.includes(event.error)) return;
+        // A real problem (microphone not allowed, network, ...): stop and tell VoxKey.
+        isListening = false;
+        send({ type: 'speech_error', error: event.error });
       };
 
       recognition.onend = () => {
         if (isListening) {
+          // Chrome ends recognition after a pause or after about a minute; keep listening.
           try {
             recognition.start();
             return;
           } catch (e) {}
         }
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'status', status: 'idle' }));
-        }
+        isListening = false;
+        send({ type: 'status', status: 'idle' });
       };
     }
+
+    function startListening(lang) {
+      if (lang) {
+        currentLang = lang;
+        if (recognition) recognition.lang = currentLang;
+      }
+      if (document.hidden) {
+        send({ type: 'speech_error', error: 'page-hidden' });
+        return;
+      }
+      if (!recognition) {
+        send({ type: 'speech_error', error: 'not-supported' });
+        return;
+      }
+      isListening = true;
+      try {
+        recognition.start();
+      } catch (err) {
+        // Already running (for example after a reconnect): confirm instead of failing.
+        send({ type: 'status', status: 'listening' });
+      }
+    }
+
+    function stopListening() {
+      isListening = false;
+      try {
+        if (recognition) recognition.stop();
+      } catch (err) {}
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      send({ type: 'bridge_state', visible: !document.hidden });
+    });
 
     function connectWS() {
       const host = window.location.host || '127.0.0.1:19876';
@@ -95,33 +132,19 @@
 
       ws.onopen = () => {
         initRecognition();
+        send({ type: 'bridge_state', visible: !document.hidden });
       };
 
       ws.onmessage = (event) => {
+        let msg;
         try {
-          const msg = JSON.parse(event.data);
-          if (msg.command === 'start') {
-            if (msg.lang) {
-              currentLang = msg.lang;
-              if (recognition) recognition.lang = currentLang;
-            }
-            isListening = true;
-            try {
-              recognition.start();
-            } catch (err) {
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'speech_error', error: err.message }));
-              }
-            }
-          } else if (msg.command === 'stop') {
-            isListening = false;
-            try {
-              recognition.stop();
-            } catch (err) {}
-          }
+          msg = JSON.parse(event.data);
         } catch (e) {
-          console.error("Message parse error:", e);
+          console.error('Message parse error:', e);
+          return;
         }
+        if (msg.command === 'start') startListening(msg.lang);
+        else if (msg.command === 'stop') stopListening();
       };
 
       ws.onclose = () => {

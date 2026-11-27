@@ -10,6 +10,36 @@ const { PORT, PATHS, APP_VERSION } = require('./config');
 const CLIENT_HEADER = 'x-voxkey-client';
 /** Longest text accepted in one speech message. */
 const MAX_TEXT_LENGTH = 5000;
+/** How long to wait for the bridge to confirm "listening" after a start, before reporting an error. */
+const START_TIMEOUT_MS = 4000;
+
+/**
+ * Command-line options for the Chrome window that runs the speech bridge (stt.html).
+ *
+ * Chrome delivers no speech results while a page is hidden, and it counts a window as hidden when
+ * other windows cover it (macOS), or computes the same on Windows ("native window occlusion"). The
+ * bridge window is tiny and usually covered, so without the last four options dictation showed
+ * "Listening" but nothing came back.
+ */
+function bridgeArgs(port, profileDir) {
+  return [
+    `--app=http://127.0.0.1:${port}/stt.html`,
+    // Own profile: a separate Chrome process that never mixes with the user's own Chrome windows.
+    `--user-data-dir=${profileDir}`,
+    // Allow the microphone for our page without a permission prompt.
+    '--use-fake-ui-for-media-stream',
+    '--window-position=-10000,-10000',
+    '--window-size=1,1',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--autoplay-policy=no-user-gesture-required',
+    // Keep the page "visible" and running at full speed when it is covered or in the background.
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-background-timer-throttling',
+    '--disable-features=CalculateNativeWinOcclusion'
+  ];
+}
 
 /** Origins a browser may use to talk to this server: only our own bridge page. */
 function allowedOrigins(port) {
@@ -27,6 +57,29 @@ function isTrustedRequest(req, port) {
   const site = req.headers['sec-fetch-site'];
   if (site !== undefined && site !== 'same-origin' && site !== 'none') return false;
   return true;
+}
+
+/** A short message for the keyboard window when voice typing fails. */
+function voiceErrorText(error) {
+  switch (error) {
+    case 'page-hidden':
+      return 'Voice typing could not start: the speech window is hidden. Press the mic again.';
+    case 'bridge-no-response':
+      return 'The speech service did not respond. It is restarting; press the mic again in a moment.';
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return 'Chrome may not use the microphone. Allow it for Google Chrome in your system privacy settings.';
+    case 'audio-capture':
+      return 'No microphone was found.';
+    case 'network':
+      return 'Voice typing needs an internet connection (Chrome sends the audio to its speech service).';
+    case 'not-supported':
+      return 'Speech recognition is not available in this Chrome.';
+    case 'language-not-supported':
+      return 'This language is not supported for voice typing.';
+    default:
+      return `Voice typing stopped: ${error}`;
+  }
 }
 
 /** Places where Google Chrome is usually installed on Windows and macOS. */
@@ -63,6 +116,9 @@ function parseBridgeMessage(raw) {
   if (data.type === 'speech_error') {
     return { type: 'speech_error', error: text(String(data.error ?? 'unknown')) };
   }
+  if (data.type === 'bridge_state' && typeof data.visible === 'boolean') {
+    return { type: 'bridge_state', visible: data.visible };
+  }
   return null;
 }
 
@@ -73,7 +129,12 @@ class SpeechServer {
     this.wss = null;
     this.clients = new Set();
     this.chromeProcess = null;
+    // True only after the bridge confirmed "listening". The keyboard shows "Listening" only then.
     this.isRecording = false;
+    // Set between a "start" and the bridge's confirmation.
+    this.startTimer = null;
+    this.startTimeoutMs = options.startTimeoutMs || START_TIMEOUT_MS;
+    this.bridgeVisible = null;
     this.currentLang = 'en-US';
 
     // Callbacks
@@ -83,6 +144,7 @@ class SpeechServer {
     this.onTakeoverRequest = options.onTakeoverRequest || (() => {});
     this.onShowRequest = options.onShowRequest || (() => {});
     this.onBridgeConnect = options.onBridgeConnect || (() => {});
+    this.onBridgeReady = options.onBridgeReady || null;
 
     // Replaceable in tests.
     this.spawn = options.spawn || spawn;
@@ -189,14 +251,25 @@ class SpeechServer {
 
   handleMessage(data) {
     if (data.type === 'status') {
-      this.isRecording = (data.status === 'listening');
+      this.clearStartTimer();
+      this.isRecording = data.status === 'listening';
       this.onSpeechStatus(data.status);
     } else if (data.type === 'speech_result') {
       this.onSpeechResult(data);
     } else if (data.type === 'speech_error') {
+      this.clearStartTimer();
       this.isRecording = false;
+      console.warn(`[SpeechServer] Speech bridge error: ${data.error}`);
       this.onSpeechError(data.error);
+    } else if (data.type === 'bridge_state') {
+      this.bridgeVisible = data.visible;
+      if (!data.visible) console.warn('[SpeechServer] The speech bridge page is hidden; Chrome delivers no results while hidden.');
     }
+  }
+
+  clearStartTimer() {
+    if (this.startTimer) clearTimeout(this.startTimer);
+    this.startTimer = null;
   }
 
   hasConnectedClients() {
@@ -234,16 +307,7 @@ class SpeechServer {
     // and does NOT collide with or get swallowed by user's already-running browser tabs
     const profileDir = path.join(os.tmpdir(), 'voxkey-speech-profile');
 
-    const args = [
-      `--app=http://127.0.0.1:${this.port}/stt.html`,
-      `--user-data-dir=${profileDir}`,
-      '--use-fake-ui-for-media-stream',
-      '--window-position=-10000,-10000',
-      '--window-size=1,1',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--autoplay-policy=no-user-gesture-required'
-    ];
+    const args = bridgeArgs(this.port, profileDir);
 
     console.log('[SpeechServer] Spawning isolated speech bridge...');
     const child = this.spawn(chromeExe, args, { stdio: 'ignore' });
@@ -269,6 +333,21 @@ class SpeechServer {
     return true;
   }
 
+  /** Stops the Chrome bridge and starts a new one (for example after it stopped answering). */
+  restartBridge() {
+    if (this.chromeProcess) {
+      try {
+        this.chromeProcess.kill();
+      } catch (e) {}
+      this.chromeProcess = null;
+    }
+    for (const client of this.clients) {
+      try { client.close(); } catch (e) {}
+    }
+    this.clients.clear();
+    return this.launchChromeBridge(this.onBridgeReady);
+  }
+
   toggleVoice(lang = null) {
     if (lang) this.currentLang = lang;
 
@@ -278,19 +357,26 @@ class SpeechServer {
       return false;
     }
 
-    if (this.isRecording) {
+    if (this.isRecording || this.startTimer) {
+      // Stop, or cancel a start that the bridge has not confirmed yet.
       console.log('[SpeechServer] Stopping voice recording...');
+      this.clearStartTimer();
       this.broadcast({ command: 'stop' });
       this.isRecording = false;
       this.onSpeechStatus('idle');
       return false;
-    } else {
-      console.log(`[SpeechServer] Starting voice recording (lang: ${this.currentLang})...`);
-      this.broadcast({ command: 'start', lang: this.currentLang });
-      this.isRecording = true;
-      this.onSpeechStatus('listening');
-      return true;
     }
+
+    // Ask the bridge to start. "Listening" is shown only when the bridge confirms (handleMessage).
+    console.log(`[SpeechServer] Starting voice recording (lang: ${this.currentLang})...`);
+    this.broadcast({ command: 'start', lang: this.currentLang });
+    this.startTimer = setTimeout(() => {
+      this.startTimer = null;
+      console.warn(`[SpeechServer] The speech bridge did not confirm within ${this.startTimeoutMs} ms.`);
+      this.broadcast({ command: 'stop' });
+      this.onSpeechError('bridge-no-response');
+    }, this.startTimeoutMs);
+    return true;
   }
 
   setLanguage(lang) {
@@ -298,6 +384,7 @@ class SpeechServer {
   }
 
   stop() {
+    this.clearStartTimer();
     if (this.chromeProcess) {
       try {
         this.chromeProcess.kill();
@@ -329,9 +416,12 @@ class SpeechServer {
 module.exports = {
   CLIENT_HEADER,
   MAX_TEXT_LENGTH,
+  START_TIMEOUT_MS,
   SpeechServer,
+  bridgeArgs,
   allowedOrigins,
   chromeCandidates,
   isTrustedRequest,
-  parseBridgeMessage
+  parseBridgeMessage,
+  voiceErrorText
 };

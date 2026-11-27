@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('voxkey', {
   getInfo: () => ipcRenderer.invoke('get-info'),
   onVoiceState: (listener) => ipcRenderer.on('voice-state', (_event, state) => listener(state)),
   onSpeechUpdate: (listener) => ipcRenderer.on('speech-update', (_event, data) => listener(data)),
+  onVoiceError: (listener) => ipcRenderer.on('voice-error', (_event, message) => listener(message)),
 
   // About window
   openAbout: () => ipcRenderer.send('open-about'),
