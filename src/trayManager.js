@@ -2,9 +2,15 @@ const { PATHS, APP_VERSION } = require('./config');
 
 /**
  * Builds the tray menu as plain data, so it can be tested without Electron.
- * Each item is { label, command } | { label, enabled: false } | { label, checked, command } | { type: 'separator' }.
+ * Each item is { label, command } | { label, enabled: false } | { label, checked, command } |
+ * { label, type: 'radio'|'checkbox', checked, command } | { label, submenu } | { type: 'separator' }.
  */
-function buildTrayMenuModel({ version = APP_VERSION, updateLabel = null, checkForUpdates = true } = {}) {
+function buildTrayMenuModel({
+  version = APP_VERSION,
+  updateLabel = null,
+  checkForUpdates = true,
+  voiceMode = 'toggle'
+} = {}) {
   const separator = { type: 'separator' };
   const top = updateLabel ? [{ label: updateLabel, command: 'update' }, separator] : [];
   return [
@@ -13,6 +19,23 @@ function buildTrayMenuModel({ version = APP_VERSION, updateLabel = null, checkFo
     separator,
     { label: 'Show / Hide Keyboard', command: 'toggleKeyboard' },
     { label: 'Toggle Voice Typing (F8)', command: 'toggleVoice' },
+    {
+      label: 'Voice Typing Mode',
+      submenu: [
+        {
+          label: 'Toggle — stays on until pressed again',
+          type: 'radio',
+          checked: voiceMode !== 'until-silence',
+          command: 'setVoiceModeToggle'
+        },
+        {
+          label: 'Stops after silence',
+          type: 'radio',
+          checked: voiceMode === 'until-silence',
+          command: 'setVoiceModeUntilSilence'
+        }
+      ]
+    },
     separator,
     { label: 'About VoxKey', command: 'about' },
     { label: 'Check for Updates…', command: 'checkUpdates' },
@@ -28,10 +51,11 @@ function toMenuTemplate(model, run) {
     if (item.type === 'separator') return { type: 'separator' };
     const entry = { label: item.label };
     if (item.enabled === false) entry.enabled = false;
-    if (item.type === 'checkbox') {
-      entry.type = 'checkbox';
+    if (item.type === 'checkbox' || item.type === 'radio') {
+      entry.type = item.type;
       entry.checked = item.checked;
     }
+    if (item.submenu) entry.submenu = toMenuTemplate(item.submenu, run);
     if (item.command) entry.click = () => run(item.command);
     return entry;
   });

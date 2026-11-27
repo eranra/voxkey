@@ -8,15 +8,22 @@ describe('Voice Typing End-to-End Loop Integration Test', () => {
   let server = null;
   let receivedResults = [];
   let statuses = [];
+  let receivedLevels = [];
 
   before(async () => {
     server = new SpeechServer({
       port: TEST_PORT,
+      // Short silence timing, so the until-silence test below runs fast.
+      silenceMs: 250,
+      silenceCheckMs: 25,
       onSpeechResult: (data) => {
         receivedResults.push(data);
       },
       onSpeechStatus: (status) => {
         statuses.push(status);
+      },
+      onAudioLevel: (level) => {
+        receivedLevels.push(level);
       }
     });
 
@@ -78,5 +85,49 @@ describe('Voice Typing End-to-End Loop Integration Test', () => {
     assert.strictEqual(clientMessages[1].command, 'stop');
 
     ws.close();
+  });
+
+  it('should stop by itself after silence, in until-silence mode', async () => {
+    server.setVoiceMode('until-silence');
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`);
+    const clientMessages = [];
+
+    await new Promise((resolve) => ws.on('open', resolve));
+
+    ws.on('message', (data) => {
+      const msg = JSON.parse(data.toString());
+      clientMessages.push(msg);
+      if (msg.command === 'start') ws.send(JSON.stringify({ type: 'status', status: 'listening' }));
+    });
+
+    // 1. User presses F8; the bridge confirms, and the silence clock starts.
+    const isStarted = server.toggleVoice('en-US');
+    assert.strictEqual(isStarted, true);
+    await new Promise(r => setTimeout(r, 80));
+    assert.strictEqual(server.isRecording, true);
+
+    // 2. The user speaks: loud levels arrive from the bridge (like stt.html sends them).
+    receivedLevels.length = 0;
+    for (let i = 0; i < 4; i++) {
+      ws.send(JSON.stringify({ type: 'audio_level', level: 0.6 }));
+      await new Promise(r => setTimeout(r, 30));
+    }
+    assert.strictEqual(server.isRecording, true, 'speech keeps it listening');
+    assert.ok(receivedLevels.length >= 4, 'levels reach the main process');
+
+    // 3. Silence: only quiet levels arrive.
+    for (let i = 0; i < 8; i++) {
+      ws.send(JSON.stringify({ type: 'audio_level', level: 0.01 }));
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    // 4. VoxKey stopped by itself and told the bridge to stop.
+    assert.strictEqual(server.isRecording, false, 'stopped after silence');
+    assert.ok(clientMessages.some((m) => m.command === 'stop'), 'the bridge was told to stop');
+    assert.strictEqual(statuses.at(-1), 'idle');
+
+    server.setVoiceMode('toggle');
+    ws.close();
+    await new Promise(r => setTimeout(r, 50));
   });
 });

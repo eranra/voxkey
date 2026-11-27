@@ -5,6 +5,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { WebSocketServer } = require('ws');
 const { PORT, PATHS, APP_VERSION } = require('./config');
+const { VOICE_MODES } = require('./store');
 
 /** Header that VoxKey's own instance checks send. A web page cannot add it without a CORS preflight, which we never allow. */
 const CLIENT_HEADER = 'x-voxkey-client';
@@ -12,6 +13,12 @@ const CLIENT_HEADER = 'x-voxkey-client';
 const MAX_TEXT_LENGTH = 5000;
 /** How long to wait for the bridge to confirm "listening" after a start, before reporting an error. */
 const START_TIMEOUT_MS = 4000;
+/** Microphone loudness (0..1, as the bridge reports it) that counts as speech, not background noise. */
+const VOICE_LEVEL_THRESHOLD = 0.1;
+/** How long silence must last, after speech was heard, before "until-silence" mode stops by itself. */
+const SILENCE_TIMEOUT_MS = 2000;
+/** How often the silence clock is checked while recording. */
+const SILENCE_CHECK_INTERVAL_MS = 250;
 
 /**
  * Command-line options for the Chrome window that runs the speech bridge (stt.html).
@@ -119,6 +126,9 @@ function parseBridgeMessage(raw) {
   if (data.type === 'bridge_state' && typeof data.visible === 'boolean') {
     return { type: 'bridge_state', visible: data.visible };
   }
+  if (data.type === 'audio_level' && typeof data.level === 'number' && Number.isFinite(data.level)) {
+    return { type: 'audio_level', level: Math.min(1, Math.max(0, data.level)) };
+  }
   return null;
 }
 
@@ -136,11 +146,21 @@ class SpeechServer {
     this.startTimeoutMs = options.startTimeoutMs || START_TIMEOUT_MS;
     this.bridgeVisible = null;
     this.currentLang = 'en-US';
+    // 'toggle': stays on until the user stops it. 'until-silence': also stops by itself after silence.
+    this.voiceMode = VOICE_MODES.includes(options.voiceMode) ? options.voiceMode : 'toggle';
+    // Silence detection (only used in 'until-silence' mode).
+    this.silenceMs = options.silenceMs || SILENCE_TIMEOUT_MS;
+    this.silenceCheckMs = options.silenceCheckMs || SILENCE_CHECK_INTERVAL_MS;
+    this.voiceLevelThreshold = options.voiceLevelThreshold || VOICE_LEVEL_THRESHOLD;
+    this.silenceTimer = null;
+    this.hasVoice = false;
+    this.lastVoiceAt = 0;
 
     // Callbacks
     this.onSpeechResult = options.onSpeechResult || (() => {});
     this.onSpeechStatus = options.onSpeechStatus || (() => {});
     this.onSpeechError = options.onSpeechError || (() => {});
+    this.onAudioLevel = options.onAudioLevel || (() => {});
     this.onTakeoverRequest = options.onTakeoverRequest || (() => {});
     this.onShowRequest = options.onShowRequest || (() => {});
     this.onBridgeConnect = options.onBridgeConnect || (() => {});
@@ -253,17 +273,52 @@ class SpeechServer {
     if (data.type === 'status') {
       this.clearStartTimer();
       this.isRecording = data.status === 'listening';
+      if (this.isRecording) this.startVoiceTracking();
+      else this.stopVoiceTracking();
       this.onSpeechStatus(data.status);
     } else if (data.type === 'speech_result') {
+      // Recognized text is also proof that the user is speaking; it drives silence detection too.
+      if (this.isRecording && (data.interim || data.final)) this.markVoiceActivity();
       this.onSpeechResult(data);
     } else if (data.type === 'speech_error') {
       this.clearStartTimer();
       this.isRecording = false;
+      this.stopVoiceTracking();
       console.warn(`[SpeechServer] Speech bridge error: ${data.error}`);
       this.onSpeechError(data.error);
     } else if (data.type === 'bridge_state') {
       this.bridgeVisible = data.visible;
       if (!data.visible) console.warn('[SpeechServer] The speech bridge page is hidden; Chrome delivers no results while hidden.');
+    } else if (data.type === 'audio_level') {
+      this.onAudioLevel(data.level);
+      if (this.isRecording && data.level >= this.voiceLevelThreshold) this.markVoiceActivity();
+    }
+  }
+
+  /** Remembers that speech is happening right now, so silence can be measured from this moment. */
+  markVoiceActivity() {
+    this.hasVoice = true;
+    this.lastVoiceAt = Date.now();
+  }
+
+  /** Starts the silence clock for a recording. Nothing stops before the first speech is heard. */
+  startVoiceTracking() {
+    this.hasVoice = false;
+    this.lastVoiceAt = Date.now();
+    if (this.voiceMode !== 'until-silence' || this.silenceTimer) return;
+    this.silenceTimer = setInterval(() => this.checkSilence(), this.silenceCheckMs);
+  }
+
+  stopVoiceTracking() {
+    if (this.silenceTimer) clearInterval(this.silenceTimer);
+    this.silenceTimer = null;
+  }
+
+  checkSilence() {
+    if (!this.isRecording || this.voiceMode !== 'until-silence' || !this.hasVoice) return;
+    if (Date.now() - this.lastVoiceAt >= this.silenceMs) {
+      console.log('[SpeechServer] Silence after speech; stopping voice recording.');
+      this.stopRecording();
     }
   }
 
@@ -348,6 +403,15 @@ class SpeechServer {
     return this.launchChromeBridge(this.onBridgeReady);
   }
 
+  /** Stops a recording, whether the user asked for it or silence ended it. */
+  stopRecording() {
+    this.clearStartTimer();
+    this.stopVoiceTracking();
+    this.broadcast({ command: 'stop' });
+    this.isRecording = false;
+    this.onSpeechStatus('idle');
+  }
+
   toggleVoice(lang = null) {
     if (lang) this.currentLang = lang;
 
@@ -360,10 +424,7 @@ class SpeechServer {
     if (this.isRecording || this.startTimer) {
       // Stop, or cancel a start that the bridge has not confirmed yet.
       console.log('[SpeechServer] Stopping voice recording...');
-      this.clearStartTimer();
-      this.broadcast({ command: 'stop' });
-      this.isRecording = false;
-      this.onSpeechStatus('idle');
+      this.stopRecording();
       return false;
     }
 
@@ -383,8 +444,20 @@ class SpeechServer {
     this.currentLang = lang;
   }
 
+  /** Changes the microphone behavior: 'toggle' or 'until-silence'. Applies even while recording. */
+  setVoiceMode(mode) {
+    if (!VOICE_MODES.includes(mode)) return;
+    this.voiceMode = mode;
+    if (mode === 'toggle') {
+      this.stopVoiceTracking();
+    } else if (this.isRecording && !this.silenceTimer) {
+      this.startVoiceTracking();
+    }
+  }
+
   stop() {
     this.clearStartTimer();
+    this.stopVoiceTracking();
     if (this.chromeProcess) {
       try {
         this.chromeProcess.kill();
@@ -417,6 +490,8 @@ module.exports = {
   CLIENT_HEADER,
   MAX_TEXT_LENGTH,
   START_TIMEOUT_MS,
+  VOICE_LEVEL_THRESHOLD,
+  SILENCE_TIMEOUT_MS,
   SpeechServer,
   bridgeArgs,
   allowedOrigins,

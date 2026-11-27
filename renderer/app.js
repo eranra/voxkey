@@ -126,6 +126,72 @@ micBtn.onclick = () => {
   api.toggleVoice();
 };
 
+// Microphone mode: 'toggle' stays on until pressed again; 'until-silence' stops by itself.
+const micWave = document.getElementById('mic-wave');
+const micLevels = document.getElementById('mic-levels');
+const levelBars = micLevels ? micLevels.querySelectorAll('.level-bar') : [];
+
+function applyVoiceMode(mode) {
+  const stopsByItself = mode === 'until-silence';
+  micBtn.classList.toggle('mode-until-silence', stopsByItself);
+  micBtn.title = stopsByItself
+    ? 'Voice Typing (F8) — stops automatically after silence'
+    : 'Voice Typing (F8)';
+}
+
+api.onVoiceMode(applyVoiceMode);
+
+// Live audio level (0..1) from the microphone, while recording.
+let targetLevel = 0;
+let smoothLevel = 0;
+let lastLevelAt = 0;
+let levelAnimId = null;
+
+api.onAudioLevel((level) => {
+  if (typeof level !== 'number' || level < 0 || level > 1) return;
+  targetLevel = level;
+  lastLevelAt = Date.now();
+});
+
+/** Draws one frame of the level indicator; runs again until recording stops. */
+function levelLoop(now) {
+  if (!isRecording) {
+    levelAnimId = null;
+    return;
+  }
+  // No live levels (for example an older bridge): keep a gentle motion so it still looks alive.
+  if (!lastLevelAt || Date.now() - lastLevelAt > 400) {
+    targetLevel = 0.15 + 0.1 * Math.sin(now / 160);
+  }
+  smoothLevel += (targetLevel - smoothLevel) * 0.35;
+  for (let i = 0; i < levelBars.length; i++) {
+    const variation = 0.55 + 0.45 * Math.abs(Math.sin(now / 140 + i * 1.9));
+    const scale = 0.2 + Math.min(1, Math.max(0, smoothLevel * variation * 1.6)) * 0.85;
+    levelBars[i].style.transform = `scaleY(${scale.toFixed(3)})`;
+  }
+  micWave.style.transform = `scale(${(1 + smoothLevel * 0.7).toFixed(3)})`;
+  micWave.style.opacity = `${Math.max(0.3, 1 - smoothLevel * 0.55).toFixed(3)}`;
+  levelAnimId = requestAnimationFrame(levelLoop);
+}
+
+function startLevelLoop() {
+  targetLevel = 0;
+  smoothLevel = 0;
+  if (levelAnimId === null) levelAnimId = requestAnimationFrame(levelLoop);
+}
+
+function stopLevelLoop() {
+  if (levelAnimId !== null) {
+    cancelAnimationFrame(levelAnimId);
+    levelAnimId = null;
+  }
+  targetLevel = 0;
+  smoothLevel = 0;
+  for (let i = 0; i < levelBars.length; i++) levelBars[i].style.transform = 'scaleY(0.2)';
+  micWave.style.transform = 'scale(1)';
+  micWave.style.opacity = '1';
+}
+
 langSelect.onchange = (e) => {
   api.setLanguage(e.target.value);
   renderKeyboard();
@@ -165,6 +231,8 @@ api.onVoiceState((state) => {
   isRecording = (state === 'listening');
   if (isRecording) transcriptInterim.classList.remove('transcript-error');
   micBtn.classList.toggle('recording', isRecording);
+  if (isRecording) startLevelLoop();
+  else stopLevelLoop();
 
   if (isRecording) {
     transcriptPlaceholder.style.display = 'none';
@@ -208,7 +276,7 @@ api.onVoiceError((message) => {
   }, 7000);
 });
 
-// Version tooltip, and the language saved from the last session.
+// Version tooltip, the language and the microphone mode saved from the last session.
 api.getInfo().then((info) => {
   const appLogo = document.getElementById('app-logo');
   if (appLogo) appLogo.title = `VoxKey v${info.version}`;
@@ -216,6 +284,7 @@ api.getInfo().then((info) => {
     langSelect.value = info.language;
     renderKeyboard();
   }
+  applyVoiceMode(info.voiceMode);
 });
 
 // Clicking the logo opens the About window.

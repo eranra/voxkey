@@ -88,7 +88,11 @@ function runPrimaryApp() {
   }
 
   function refreshTray() {
-    trayMgr.refresh({ updateLabel: updateMenuLabel(updater.state), checkForUpdates: store.get().checkForUpdates });
+    trayMgr.refresh({
+      updateLabel: updateMenuLabel(updater.state),
+      checkForUpdates: store.get().checkForUpdates,
+      voiceMode: store.get().voiceMode
+    });
   }
 
   /** Sends a message to the keyboard window, if it exists. */
@@ -122,6 +126,7 @@ function runPrimaryApp() {
       // A bridge that stopped answering is replaced, so the next press of the mic works.
       if (error === 'bridge-no-response') speechServer.restartBridge();
     },
+    onAudioLevel: (level) => sendToKeyboard('audio-level', level),
     onBridgeConnect: () => {
       // Hide the background Chrome window as soon as it connects (Windows only; a no-op elsewhere).
       injectorMgr.hideBridgeWindow();
@@ -136,6 +141,7 @@ function runPrimaryApp() {
     onBridgeReady: () => injectorMgr.hideBridgeWindow()
   });
   speechServer.setLanguage(store.get().language);
+  speechServer.setVoiceMode(store.get().voiceMode);
 
   /** Tray menu commands (see buildTrayMenuModel in src/trayManager.js). */
   function runCommand(command) {
@@ -159,6 +165,15 @@ function runPrimaryApp() {
         store.update({ checkForUpdates: !store.get().checkForUpdates });
         refreshTray();
         break;
+      case 'setVoiceModeToggle':
+      case 'setVoiceModeUntilSilence': {
+        const mode = command === 'setVoiceModeUntilSilence' ? 'until-silence' : 'toggle';
+        store.update({ voiceMode: mode });
+        speechServer.setVoiceMode(mode);
+        sendToKeyboard('voice-mode', mode);
+        refreshTray();
+        break;
+      }
       case 'quit':
         app.quit();
         break;
@@ -220,7 +235,7 @@ function runPrimaryApp() {
   ipcMain.on('open-link', (event, url) => {
     if (isAllowedLink(url)) void shell.openExternal(url);
   });
-  ipcMain.handle('get-info', () => ({ version: APP_VERSION, language: store.get().language }));
+  ipcMain.handle('get-info', () => ({ version: APP_VERSION, language: store.get().language, voiceMode: store.get().voiceMode }));
   ipcMain.handle('get-about', () => currentAboutInfo());
 
   app.on('will-quit', () => {

@@ -19,7 +19,8 @@
   <script>
     // VoxKey speech bridge. Runs in a small Chrome window (Electron has no speech recognition).
     // VoxKey sends {command: 'start', lang} and {command: 'stop'}; this page answers with
-    // status / speech_result / speech_error / bridge_state messages. See docs/architecture.md.
+    // status / speech_result / speech_error / bridge_state / audio_level messages.
+    // See docs/architecture.md.
     //
     // Chrome delivers no speech results while this page is hidden. VoxKey starts Chrome with options
     // that keep a covered window "visible"; if the page is still hidden (for example minimized), it
@@ -38,6 +39,74 @@
 
     // Errors after which Chrome simply restarts listening; they are not worth telling the user.
     const QUIET_ERRORS = ['no-speech', 'aborted'];
+
+    // ---- Audio level reporting ------------------------------------------------------------------
+    // While listening, the microphone is also measured, so the keyboard can show live levels and
+    // VoxKey can stop after silence. If any part of this fails, dictation still works; VoxKey then
+    // falls back to speech results to detect silence.
+    let micStream = null;
+    let audioCtx = null;
+    let analyser = null;
+    let levelTimer = null;
+
+    function stopTracks(stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+    }
+
+    function rmsLevel(buf) {
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128;
+        sum += v * v;
+      }
+      return Math.sqrt(sum / buf.length);
+    }
+
+    function startAudioLevels() {
+      if (levelTimer) return;
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        if (!isListening || levelTimer) {
+          stopTracks(stream);
+          return;
+        }
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) {
+          stopTracks(stream);
+          return;
+        }
+        micStream = stream;
+        audioCtx = new AudioCtx();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        audioCtx.createMediaStreamSource(stream).connect(analyser);
+        if (audioCtx.resume) audioCtx.resume().catch(function () {});
+        const buf = new Uint8Array(analyser.fftSize);
+        levelTimer = setInterval(function () {
+          if (!analyser) return;
+          analyser.getByteTimeDomainData(buf);
+          send({ type: 'audio_level', level: Math.min(1, rmsLevel(buf) * 3) });
+        }, 100);
+      }).catch(function () {
+        // No level data; dictation works without it.
+      });
+    }
+
+    function stopAudioLevels() {
+      if (levelTimer) {
+        clearInterval(levelTimer);
+        levelTimer = null;
+      }
+      if (micStream) {
+        stopTracks(micStream);
+        micStream = null;
+      }
+      if (audioCtx) {
+        try { audioCtx.close(); } catch (e) {}
+        audioCtx = null;
+      }
+      analyser = null;
+    }
 
     function send(msg) {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -107,6 +176,7 @@
         return;
       }
       isListening = true;
+      startAudioLevels(); // runs beside recognition; failure there must not stop dictation
       try {
         recognition.start();
       } catch (err) {
@@ -117,6 +187,7 @@
 
     function stopListening() {
       isListening = false;
+      stopAudioLevels();
       try {
         if (recognition) recognition.stop();
       } catch (err) {}

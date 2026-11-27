@@ -6,16 +6,25 @@ const path = require('path');
 const { DEFAULT_SETTINGS, normalizeSettings, SettingsStore } = require('../../src/store');
 
 describe('settings', () => {
-  it('defaults: check for updates, English', () => {
+  it('defaults: check for updates, English, toggle microphone', () => {
     assert.deepStrictEqual(normalizeSettings(null), { ...DEFAULT_SETTINGS });
     assert.strictEqual(DEFAULT_SETTINGS.checkForUpdates, true);
+    assert.strictEqual(DEFAULT_SETTINGS.voiceMode, 'toggle');
   });
 
   it('drops wrong types and unsafe values', () => {
     const s = normalizeSettings({ checkForUpdates: 'yes', lastAnnouncedVersion: '<script>', language: '../../etc', extra: 1 });
-    assert.deepStrictEqual(s, { checkForUpdates: true, lastAnnouncedVersion: null, language: 'en-US' });
+    assert.deepStrictEqual(s, { checkForUpdates: true, lastAnnouncedVersion: null, language: 'en-US', voiceMode: 'toggle' });
     assert.strictEqual(normalizeSettings({ lastAnnouncedVersion: '0.3.0' }).lastAnnouncedVersion, '0.3.0');
     assert.strictEqual(normalizeSettings({ language: 'he-IL' }).language, 'he-IL');
+  });
+
+  it('keeps a valid microphone mode and replaces anything else with the default', () => {
+    assert.strictEqual(normalizeSettings({ voiceMode: 'until-silence' }).voiceMode, 'until-silence');
+    assert.strictEqual(normalizeSettings({ voiceMode: 'toggle' }).voiceMode, 'toggle');
+    for (const bad of ['hold-to-talk', '', null, 1, {}, []]) {
+      assert.strictEqual(normalizeSettings({ voiceMode: bad }).voiceMode, 'toggle', String(bad));
+    }
   });
 
   it('saves and loads from disk; a broken file gives the defaults', () => {
@@ -23,8 +32,11 @@ describe('settings', () => {
     const file = path.join(dir, 'nested', 'settings.json');
     try {
       const store = new SettingsStore(file);
-      store.update({ checkForUpdates: false, language: 'fr-FR' });
-      assert.deepStrictEqual(new SettingsStore(file).get(), { checkForUpdates: false, lastAnnouncedVersion: null, language: 'fr-FR' });
+      store.update({ checkForUpdates: false, language: 'fr-FR', voiceMode: 'until-silence' });
+      assert.deepStrictEqual(
+        new SettingsStore(file).get(),
+        { checkForUpdates: false, lastAnnouncedVersion: null, language: 'fr-FR', voiceMode: 'until-silence' }
+      );
       assert.strictEqual(fs.existsSync(`${file}.tmp`), false);
 
       fs.writeFileSync(file, '{ not json');

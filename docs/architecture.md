@@ -12,10 +12,26 @@ Electron has no speech recognition of its own, so VoxKey uses Google Chrome's We
 2. It starts Chrome with a separate profile and `--app=http://127.0.0.1:19876/stt.html`, in a small window
    (`bridgeArgs()` in `src/speechServer.js`).
 3. `stt.html` connects back over WebSocket. On F8, the server sends `{command: 'start', lang}`; the page sends
-   `status`, `speech_result` (interim and final text), `speech_error` and `bridge_state` (visible or hidden).
+   `status`, `speech_result` (interim and final text), `speech_error`, `bridge_state` (visible or hidden) and
+   `audio_level` (microphone loudness, 0..1, about ten times a second while listening).
 4. The keyboard shows "Listening" only after the page confirms with `status: listening`. Without a confirmation
    within 4 seconds, VoxKey reports `bridge-no-response` and restarts the bridge.
 5. Final text goes to the injector, which types it into the focused app.
+
+### Microphone modes
+
+The tray menu's **Voice Typing Mode** offers two behaviors, saved with the other settings in `src/store.js`:
+
+- **Toggle** (default): the microphone stays on until the user stops it.
+- **Stops after silence**: the microphone also stops by itself. `stt.html` measures the microphone while
+  listening (`getUserMedia` + `AnalyserNode`, separate from the Web Speech API) and reports `audio_level`;
+  recognized text counts as speech too. `src/speechServer.js` stops the recording after 2 seconds without
+  speech, but never before speech was heard at all — so a pause before you start speaking does not end it.
+  If the level measuring fails, dictation still works and silence detection falls back to speech results.
+
+The same levels drive the keyboard's microphone indicator: while recording, four bars replace the microphone
+glyph and follow the live loudness, and the ring around the button scales with the voice. Without level data,
+the bars keep a gentle idle motion.
 
 **Chrome gives no speech results while the page is hidden.** On macOS, Chrome counts a window as hidden when
 other windows cover it, and the bridge window is usually covered. `bridgeArgs()` therefore passes

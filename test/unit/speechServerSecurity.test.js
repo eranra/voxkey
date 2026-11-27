@@ -116,6 +116,15 @@ describe('parseBridgeMessage()', () => {
     assert.strictEqual(parseBridgeMessage(JSON.stringify({ type: 'speech_result', final: long })).final.length, MAX_TEXT_LENGTH);
     assert.deepStrictEqual(parseBridgeMessage('{"type":"speech_error","error":"no-speech"}'), { type: 'speech_error', error: 'no-speech' });
   });
+  it('accepts audio levels, clamped to 0..1, and nothing else as a level', () => {
+    assert.deepStrictEqual(parseBridgeMessage('{"type":"audio_level","level":0.42}'), { type: 'audio_level', level: 0.42 });
+    assert.deepStrictEqual(parseBridgeMessage('{"type":"audio_level","level":7}'), { type: 'audio_level', level: 1 });
+    assert.deepStrictEqual(parseBridgeMessage('{"type":"audio_level","level":-3}'), { type: 'audio_level', level: 0 });
+    assert.strictEqual(parseBridgeMessage('{"type":"audio_level","level":"loud"}'), null);
+    assert.strictEqual(parseBridgeMessage('{"type":"audio_level"}'), null);
+    assert.strictEqual(parseBridgeMessage('{"type":"audio_level","level":NaN}'), null, 'not valid JSON');
+    assert.strictEqual(parseBridgeMessage('{"type":"audio_level","level":Infinity}'), null);
+  });
   it('returns null for anything else', () => {
     assert.strictEqual(parseBridgeMessage('[1,2]'), null);
     assert.strictEqual(parseBridgeMessage('null'), null);
