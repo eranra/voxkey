@@ -62,7 +62,10 @@ describe('packaging', () => {
     assert.match(release, /^  package:\n    needs: draft/m);
   });
 
-  it('the changelog has an entry for this version', () => {
-    assert.match(read('CHANGELOG.md'), new RegExp(`## \\[${pkg.version.replace(/\./g, '\\.')}\\]`));
+  it('the changelog has a dated entry for this version', () => {
+    // A release commit must both bump the version and give the entry a date; this fails
+    // when one of the two was forgotten.
+    const header = new RegExp(`^## \\[${pkg.version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}$`, 'm');
+    assert.match(read('CHANGELOG.md'), header);
   });
 });
