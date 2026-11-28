@@ -8,15 +8,31 @@ without Node.js and talk to the main process only through `renderer/preload.js`.
 
 Electron has no speech recognition of its own, so VoxKey uses Google Chrome's Web Speech API:
 
+0. **macOS: VoxKey asks for microphone access at startup** (`src/micPermission.js`). macOS
+   attributes the microphone use of the Chrome bridge to the app that started it — VoxKey — and a
+   missing grant arrives as silent audio with no error: the mic indicator moves, but nothing is
+   ever recognized. The system prompt appears once.
 1. `src/speechServer.js` starts an HTTP and WebSocket server on `127.0.0.1:19876`.
 2. It starts Chrome with a separate profile and `--app=http://127.0.0.1:19876/stt.html`, in a small window
-   (`bridgeArgs()` in `src/speechServer.js`).
+   (`bridgeArgs()` in `src/speechServer.js`). The profile directory is created fresh on every launch
+   (`launchChromeBridge()`): a long-lived profile once got into a state where the speech recognizer
+   ended every session instantly, without any error, while the microphone itself kept working
+   (macOS, 2026-11-28). Leftover directories from earlier launches are removed after a day.
 3. `stt.html` connects back over WebSocket. On F8, the server sends `{command: 'start', lang}`; the page sends
-   `status`, `speech_result` (interim and final text), `speech_error`, `bridge_state` (visible or hidden) and
-   `audio_level` (microphone loudness, 0..1, about ten times a second while listening).
+   `status`, `speech_result` (interim and final text), `speech_error`, `bridge_state` (visible or hidden),
+   `audio_level` (microphone loudness, 0..1, about ten times a second while listening) and `levels_error`
+   (the loudness cannot be measured; dictation itself may still work).
 4. The keyboard shows "Listening" only after the page confirms with `status: listening`. Without a confirmation
    within 4 seconds, VoxKey reports `bridge-no-response` and restarts the bridge.
 5. Final text goes to the injector, which types it into the focused app.
+
+**A "listening" bridge whose microphone delivers nothing is detected.** After the bridge confirms
+`listening`, it must show within a few seconds that audio flows: an `audio_level`, a `speech_result`, or a
+`levels_error` notice. If nothing arrives (`MIC_STUCK_TIMEOUT_MS` in `src/speechServer.js`), VoxKey reports
+`mic-stuck`, stops the recording and replaces the bridge. Without this, a stuck macOS audio state made
+VoxKey show "Listening (speak now)" forever while typing nothing (observed 2026-11-28, after Chrome
+processes were killed while an audio stream was opening; restarting the audio daemon `coreaudiod`
+also clears that state).
 
 ### Microphone modes
 

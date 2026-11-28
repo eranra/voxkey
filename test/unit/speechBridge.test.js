@@ -7,10 +7,11 @@
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const { WebSocket } = require('ws');
-const { SpeechServer, bridgeArgs, START_TIMEOUT_MS, voiceErrorText } = require('../../src/speechServer');
+const { SpeechServer, bridgeArgs, removeStaleBridgeProfiles, START_TIMEOUT_MS, voiceErrorText } = require('../../src/speechServer');
 
 // ---- A sandbox that runs the real stt.html script -------------------------------------------------
 
@@ -21,7 +22,7 @@ const sttScript = (() => {
   return scripts[0];
 })();
 
-function loadBridgePage({ hidden = false, audioLevel = null } = {}) {
+function loadBridgePage({ hidden = false, audioLevel = null, gumRejects = false } = {}) {
   const sent = [];
   const recognitions = [];
   const docListeners = {};
@@ -87,15 +88,17 @@ function loadBridgePage({ hidden = false, audioLevel = null } = {}) {
     webkitSpeechRecognition: FakeRecognition
   };
 
-  if (audioLevel !== null) {
+  if (audioLevel !== null || gumRejects) {
     // The browser side of the level measurement: a microphone stream and an analyser
     // whose samples all read `audioLevel` (128 = silence, 148 = a loud constant tone).
     sandbox.navigator = {
       mediaDevices: {
         getUserMedia: () =>
-          Promise.resolve({
-            getTracks: () => [{ stop: () => micState.tracksStopped++ }]
-          })
+          gumRejects
+            ? Promise.reject(new Error('NotAllowedError'))
+            : Promise.resolve({
+                getTracks: () => [{ stop: () => micState.tracksStopped++ }]
+              })
       }
     };
     class FakeAudioContext {
@@ -289,7 +292,7 @@ describe('bridge page', () => {
     assert.deepStrictEqual(page.sent.filter((m) => m.type === 'audio_level').at(-1), { type: 'audio_level', level: 0 });
   });
 
-  it('dictation works when the microphone cannot be measured', async () => {
+  it('says so when the microphone cannot be measured, so VoxKey does not wait for levels', async () => {
     const page = loadBridgePage(); // no navigator.mediaDevices: measurement unavailable
     page.connect();
     page.receive({ command: 'start' });
@@ -297,6 +300,16 @@ describe('bridge page', () => {
     assert.strictEqual(page.recognition.running, true);
     assert.deepStrictEqual(page.sent.at(-1), { type: 'status', status: 'listening' });
     assert.ok(!page.sent.some((m) => m.type === 'audio_level'), 'no levels, but no failure either');
+    assert.ok(page.sent.some((m) => m.type === 'levels_error'), 'the page reports that levels are unavailable');
+  });
+
+  it('also reports a rejected microphone request, instead of failing silently', async () => {
+    const page = loadBridgePage({ gumRejects: true });
+    page.connect();
+    page.receive({ command: 'start' });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.strictEqual(page.recognition.running, true, 'dictation still runs');
+    assert.ok(page.sent.some((m) => m.type === 'levels_error'));
   });
 
   it('restarts the session in the new language when the language changes mid-session', () => {
@@ -432,12 +445,105 @@ describe('voice start handshake', () => {
   });
 });
 
+// ---- A microphone that never delivers audio --------------------------------------------------------
+//
+// Background (bug found 2026-11-28): when macOS audio gets into a stuck state (observed after
+// Chrome instances are killed while an audio stream is opening), the bridge confirms "listening"
+// but its microphone never delivers samples and the recognizer produces nothing. VoxKey showed
+// "Listening (speak now)" forever. The server now notices that no levels, no results and no
+// levels-unavailable notice arrived, and reports it as an error instead.
+
+describe('microphone stuck detection', () => {
+  const PORT = 19996;
+  let server;
+  const errors = [];
+  const statuses = [];
+
+  before(async () => {
+    server = new SpeechServer({
+      port: PORT,
+      startTimeoutMs: 150,
+      micStuckMs: 120,
+      onSpeechStatus: (s) => statuses.push(s),
+      onSpeechError: (e) => errors.push(e)
+    });
+    await server.start();
+  });
+
+  after(() => server.stop());
+
+  async function connectBridge(onMessage) {
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
+    await new Promise((r) => ws.on('open', r));
+    ws.on('message', (raw) => onMessage(JSON.parse(raw.toString()), ws));
+    return ws;
+  }
+
+  /** Starts dictation with a bridge that confirms "listening" and then goes quiet. */
+  async function startSilentBridge(extra) {
+    errors.length = 0;
+    const ws = await connectBridge((msg, sock) => {
+      if (msg.command === 'start') {
+        sock.send(JSON.stringify({ type: 'status', status: 'listening' }));
+        if (extra) extra(sock);
+      }
+    });
+    server.toggleVoice('en-US');
+    await new Promise((r) => setTimeout(r, 60)); // past the start handshake
+    return ws;
+  }
+
+  it('reports mic-stuck when the bridge listens but nothing arrives', async () => {
+    const ws = await startSilentBridge();
+    await new Promise((r) => setTimeout(r, 250));
+    assert.deepStrictEqual(errors, ['mic-stuck']);
+    assert.strictEqual(server.isRecording, false, 'not listening anymore');
+    ws.close();
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  it('keeps waiting while audio levels arrive', async () => {
+    const ws = await startSilentBridge((sock) => {
+      const timer = setInterval(() => sock.send(JSON.stringify({ type: 'audio_level', level: 0.01 })), 40);
+      setTimeout(() => clearInterval(timer), 400);
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepStrictEqual(errors, [], 'levels prove the microphone works');
+    server.toggleVoice(); // stop, and clear the detection state
+    ws.close();
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  it('keeps waiting when the bridge says levels are unavailable', async () => {
+    const ws = await startSilentBridge((sock) => {
+      sock.send(JSON.stringify({ type: 'levels_error' }));
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepStrictEqual(errors, []);
+    server.toggleVoice();
+    ws.close();
+    await new Promise((r) => setTimeout(r, 50));
+  });
+
+  it('a speech result also proves that audio arrives', async () => {
+    const ws = await startSilentBridge((sock) => {
+      setTimeout(() => sock.send(JSON.stringify({ type: 'speech_result', interim: 'hello', final: '' })), 60);
+    });
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepStrictEqual(errors, []);
+    server.toggleVoice();
+    ws.close();
+    await new Promise((r) => setTimeout(r, 50));
+  });
+});
+
 // ---- Telling the user, and recovering ------------------------------------------------------------
 
 describe('voice errors', () => {
   it('every error the bridge or VoxKey reports has a clear message', () => {
     assert.match(voiceErrorText('page-hidden'), /hidden/);
     assert.match(voiceErrorText('bridge-no-response'), /did not respond/);
+    assert.match(voiceErrorText('mic-stuck'), /microphone/i);
     assert.match(voiceErrorText('not-allowed'), /microphone/i);
     assert.match(voiceErrorText('network'), /internet/);
     assert.match(voiceErrorText('audio-capture'), /microphone/i);
@@ -461,6 +567,53 @@ describe('voice errors', () => {
     server.restartBridge();
     assert.strictEqual(spawned.length, 2);
     assert.deepStrictEqual(killed, [spawned[0]]);
+  });
+
+  it('every bridge launch gets a fresh profile directory', () => {
+    // A long-lived profile once got into a state where the speech recognizer ended every session
+    // instantly, without any error, while the microphone itself kept working (macOS, 2026-11-28).
+    // A fresh profile per launch contains that.
+    const spawnedArgs = [];
+    const server = new SpeechServer({
+      port: 1,
+      chromePaths: ['/chrome'],
+      fileExists: () => true,
+      spawn: (exe, args) => {
+        spawnedArgs.push(args);
+        return { on() {}, kill() {} };
+      }
+    });
+    server.launchChromeBridge();
+    server.restartBridge();
+    const dirs = spawnedArgs.map((args) => args.find((a) => a.startsWith('--user-data-dir=')).slice('--user-data-dir='.length));
+    assert.strictEqual(dirs.length, 2);
+    assert.notStrictEqual(dirs[0], dirs[1], 'each launch creates its own profile directory');
+    for (const dir of dirs) {
+      assert.ok(path.basename(dir).startsWith('voxkey-speech-'), `${dir} is a VoxKey bridge directory`);
+      assert.ok(fs.existsSync(dir), 'the directory exists');
+    }
+  });
+
+  it('stale bridge profiles are cleaned up, fresh ones are kept', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'voxkey-clean-test-'));
+    try {
+      const day = 24 * 60 * 60 * 1000;
+      const stale = path.join(tmp, 'voxkey-speech-stale');
+      const legacy = path.join(tmp, 'voxkey-speech-profile');
+      const fresh = path.join(tmp, 'voxkey-speech-fresh');
+      const keep = path.join(tmp, 'voxkey-speech-keep');
+      for (const dir of [stale, legacy, fresh, keep]) fs.mkdirSync(dir);
+      const old = new Date(Date.now() - 2 * day);
+      fs.utimesSync(stale, old, old);
+      fs.utimesSync(legacy, old, old);
+      removeStaleBridgeProfiles(keep, tmp);
+      assert.ok(!fs.existsSync(stale), 'old bridge profiles are removed');
+      assert.ok(!fs.existsSync(legacy), 'the legacy fixed directory is removed too');
+      assert.ok(fs.existsSync(fresh), 'a recent bridge directory is kept');
+      assert.ok(fs.existsSync(keep), 'the directory of the current bridge is kept');
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it('the keyboard page shows voice errors', () => {

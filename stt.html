@@ -19,7 +19,7 @@
   <script>
     // VoxKey speech bridge. Runs in a small Chrome window (Electron has no speech recognition).
     // VoxKey sends {command: 'start', lang} and {command: 'stop'}; this page answers with
-    // status / speech_result / speech_error / bridge_state / audio_level messages.
+    // status / speech_result / speech_error / bridge_state / audio_level / levels_error messages.
     // See docs/architecture.md.
     //
     // Chrome delivers no speech results while this page is hidden. VoxKey starts Chrome with options
@@ -64,7 +64,11 @@
 
     function startAudioLevels() {
       if (levelTimer) return;
-      if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        // No level data; dictation works without it. Say so, so VoxKey does not wait for levels.
+        send({ type: 'levels_error' });
+        return;
+      }
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
         if (!isListening || levelTimer) {
           stopTracks(stream);
@@ -73,6 +77,7 @@
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) {
           stopTracks(stream);
+          send({ type: 'levels_error' });
           return;
         }
         micStream = stream;
@@ -89,6 +94,7 @@
         }, 100);
       }).catch(function () {
         // No level data; dictation works without it.
+        send({ type: 'levels_error' });
       });
     }
 

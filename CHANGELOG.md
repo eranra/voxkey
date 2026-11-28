@@ -18,6 +18,22 @@ and versions follow [Semantic Versioning](https://semver.org/).
   starts. Changing the language while dictating now restarts recognition in the new language
   without leaving the listening state.
 
+### Fixed
+
+- **macOS: dictation could show "Listening" forever while typing nothing.** Three causes, all fixed:
+  - **VoxKey now asks for microphone access itself.** macOS attributes the microphone use of the
+    speech bridge — a Chrome process that VoxKey starts — to VoxKey. Without the permission the
+    bridge receives silent audio and no error: the mic indicator moves, but nothing is ever typed.
+    VoxKey now shows the system's microphone prompt once, at first launch.
+  - The Chrome profile that the speech bridge reuses got into a state where the speech recognizer
+    ended every session instantly, without any error, while the microphone itself kept working.
+    The bridge now gets a fresh profile directory on every launch, so a broken profile cannot
+    persist; leftover directories are cleaned up after a day.
+  - When the audio pipeline is stuck (observed when Chrome processes are killed while an audio
+    stream is opening), the bridge keeps confirming "listening" but nothing arrives. VoxKey now
+    notices within a few seconds, shows "The microphone is not responding", and replaces the
+    speech bridge so the next press of the mic works.
+
 ## [0.2.0] - 2026-11-27
 
 ### Added
