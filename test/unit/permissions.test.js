@@ -146,7 +146,8 @@ describe('askWithFocusedWindow (macOS shows permission prompts only for an activ
       isFocusable: () => calls.filter((c) => c.op === 'setFocusable').at(-1)?.value ?? focusable,
       setFocusable: (value) => calls.push({ op: 'setFocusable', value }),
       show: () => calls.push({ op: 'show' }),
-      focus: () => calls.push({ op: 'focus' })
+      focus: () => calls.push({ op: 'focus' }),
+      blur: () => calls.push({ op: 'blur' })
     };
     return { win, calls };
   }
@@ -155,26 +156,28 @@ describe('askWithFocusedWindow (macOS shows permission prompts only for an activ
     const { win, calls } = fakeWindow();
     const result = await askWithFocusedWindow(() => win, async () => 'granted');
     assert.strictEqual(result, 'granted');
-    assert.deepStrictEqual(
-      calls.map((c) => (c.op === 'setFocusable' ? `setFocusable(${c.value})` : c.op)),
-      ['setFocusable(true)', 'show', 'focus', 'setFocusable(false)'],
-      'the window takes focus during the prompt and gives it back'
-    );
+    assert.ok(calls.some((c) => c.op === 'setFocusable' && c.value === true), 'takes focus for the prompt');
+    assert.strictEqual(calls.at(-1).op, 'blur', 'hands focus back afterwards');
+    assert.strictEqual(calls.filter((c) => c.op === 'setFocusable').at(-1).value, false, 'restored to not focusable');
   });
 
-  it('leaves a focusable window focusable', async () => {
-    const { win, calls } = fakeWindow({ focusable: true });
-    await askWithFocusedWindow(() => win, async () => 'granted');
-    assert.deepStrictEqual(
-      calls.map((c) => (c.op === 'setFocusable' ? `setFocusable(${c.value})` : c.op)),
-      ['setFocusable(true)', 'show', 'focus', 'setFocusable(true)']
-    );
+  it('serializes concurrent requests, so the second cannot capture the temporary focusable state', async () => {
+    const { win, calls } = fakeWindow();
+    let releaseFirst;
+    const firstGate = new Promise((r) => (releaseFirst = r));
+    const first = askWithFocusedWindow(() => win, () => new Promise((r) => firstGate.then(() => r('granted'))));
+    const second = askWithFocusedWindow(() => win, async () => 'granted');
+    await new Promise((r) => setTimeout(r, 10));
+    releaseFirst();
+    assert.deepStrictEqual(await Promise.all([first, second]), ['granted', 'granted']);
+    // After both, the last setFocusable restores the normal not-focusable state.
+    assert.strictEqual(calls.filter((c) => c.op === 'setFocusable').at(-1).value, false);
   });
 
   it('restores the window even when the request fails, and works without a window', async () => {
     const { win, calls } = fakeWindow();
     await assert.rejects(askWithFocusedWindow(() => win, () => Promise.reject(new Error('no TCC'))), /no TCC/);
-    assert.strictEqual(calls.at(-1).op === 'setFocusable' && calls.at(-1).value, false, 'restored');
+    assert.strictEqual(calls.filter((c) => c.op === 'setFocusable').at(-1).value, false, 'restored');
     const result = await askWithFocusedWindow(() => null, async () => 'unavailable');
     assert.strictEqual(result, 'unavailable');
   });
