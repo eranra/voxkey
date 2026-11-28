@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { EventEmitter } = require('events');
-const { InjectorManager, ACTIVATE_SETTLE_MS, appleScriptString, macKeyScript, macTextPlan } = require('../../src/injectorManager');
+const { InjectorManager, ACTIVATE_SETTLE_MS, CLIPBOARD_RESTORE_MS, appleScriptString, macKeyScript, macTextPlan } = require('../../src/injectorManager');
 
 /** A fake spawn: each osascript "runs" for `ms` milliseconds; finished scripts are recorded in order. */
 function fakeSpawn(log, ms = 5) {
@@ -120,7 +120,12 @@ describe('InjectorManager on macOS', () => {
     const log = [];
     let clip = 'old';
     const clipboard = { readText: () => clip, writeText: (t) => (clip = t) };
-    const mgr = new InjectorManager('/none', { platform: 'darwin', spawn: fakeSpawn(log), clipboard });
+    const mgr = new InjectorManager('/none', {
+      platform: 'darwin',
+      clipboard,
+      clipboardRestoreMs: 20,
+      spawn: fakeSpawn(log)
+    });
     const seen = [];
     const spawn = mgr.spawn;
     mgr.spawn = (cmd, args) => {
@@ -133,12 +138,23 @@ describe('InjectorManager on macOS', () => {
     assert.strictEqual(clip, 'old');
   });
 
+  it('gives a slow application time to process the paste before the clipboard is restored', () => {
+    // Regression (found 2026-11-28): with a short restore, busy applications (browsers,
+    // Electron apps) processed the Cmd+V only after the old clipboard content was back, so
+    // Hebrew and other non-ASCII dictation pasted nothing while English kept working.
+    assert.ok(
+      CLIPBOARD_RESTORE_MS >= 1000,
+      `restore after ${CLIPBOARD_RESTORE_MS} ms is too fast for slow applications`
+    );
+  });
+
   it('does not overwrite the clipboard if something else changed it', async () => {
     let clip = 'old';
     const clipboard = { readText: () => clip, writeText: (t) => (clip = t) };
     const mgr = new InjectorManager('/none', {
       platform: 'darwin',
       clipboard,
+      clipboardRestoreMs: 20,
       spawn: () => {
         const child = new EventEmitter();
         setTimeout(() => {
