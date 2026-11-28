@@ -1,16 +1,28 @@
 const { shell, systemPreferences } = require('electron');
 const { spawn } = require('child_process');
 
-/** Opens the macOS pane or Windows settings page where this permission lives. */
-function openPermissionSettings(permission, platform = process.platform) {
+/**
+ * Opens the macOS pane or Windows settings page where this permission lives.
+ *
+ * For Accessibility the native prompt is used (AXIsProcessTrustedWithOptions): macOS itself opens
+ * the right pane on every version. Newer releases renamed and reorganized the privacy panes, so a
+ * hard-coded deep link can land somewhere the user cannot find.
+ */
+function openPermissionSettings(permission, platform = process.platform, prefs = systemPreferences) {
   if (platform === 'darwin') {
-    const panes = {
-      accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
-      microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
-    };
-    const pane = panes[permission];
-    if (pane) void shell.openExternal(pane);
-    return Boolean(pane);
+    if (permission === 'accessibility') {
+      if (prefs && typeof prefs.isTrustedAccessibilityClient === 'function') {
+        prefs.isTrustedAccessibilityClient(true);
+        return true;
+      }
+      void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+      return true;
+    }
+    if (permission === 'microphone') {
+      void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone');
+      return true;
+    }
+    return false;
   }
   if (platform === 'win32' && permission === 'microphone') {
     void shell.openExternal('ms-settings:privacy-microphone');

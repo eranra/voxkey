@@ -103,14 +103,25 @@ describe('canDictate', () => {
 });
 
 describe('openPermissionSettings', () => {
-  it('opens the matching macOS privacy pane', () => {
+  it('asks macOS itself to open the Accessibility pane (the pane was renamed in newer releases)', () => {
     openedUrls.length = 0;
-    assert.strictEqual(openPermissionSettings('accessibility', 'darwin'), true);
+    const prompts = [];
+    const prefs = { isTrustedAccessibilityClient: (prompt) => prompts.push(prompt) || true };
+    assert.strictEqual(openPermissionSettings('accessibility', 'darwin', prefs), true);
+    assert.deepStrictEqual(prompts, [true], 'the native prompt is requested');
+    assert.deepStrictEqual(openedUrls, [], 'no hard-coded deep link is used');
+  });
+
+  it('falls back to the Accessibility deep link when the native prompt is unavailable', () => {
+    openedUrls.length = 0;
+    assert.strictEqual(openPermissionSettings('accessibility', 'darwin', {}), true);
+    assert.deepStrictEqual(openedUrls, ['x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility']);
+  });
+
+  it('opens the macOS microphone pane', () => {
+    openedUrls.length = 0;
     assert.strictEqual(openPermissionSettings('microphone', 'darwin'), true);
-    assert.deepStrictEqual(openedUrls, [
-      'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
-      'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
-    ]);
+    assert.deepStrictEqual(openedUrls, ['x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone']);
   });
 
   it('knows no typing pane (Windows needs none) and no unknown permissions', () => {
