@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const { EventEmitter } = require('events');
-const { InjectorManager, appleScriptString, macKeyScript, macTextPlan } = require('../../src/injectorManager');
+const { InjectorManager, ACTIVATE_SETTLE_MS, appleScriptString, macKeyScript, macTextPlan } = require('../../src/injectorManager');
 
 /** A fake spawn: each osascript "runs" for `ms` milliseconds; finished scripts are recorded in order. */
 function fakeSpawn(log, ms = 5) {
@@ -79,6 +79,41 @@ describe('InjectorManager on macOS', () => {
     await mgr.sendText('fine');
     await mgr.sendText('killme');
     assert.deepStrictEqual(errors, []);
+  });
+
+  it('typing goes back to the app the user was in: the tracker feeds the target, the script activates it', async () => {
+    // Clicking the keyboard window activates VoxKey on newer macOS even though the window is
+    // not focusable; without re-activating the user's app, the keys land in the keyboard.
+    let trackerChild = null;
+    const spawn = (cmd, args) => {
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      if (args[1] && args[1].includes('repeat')) {
+        trackerChild = child; // the frontmost tracker, runs forever
+      } else {
+        setTimeout(() => child.emit('exit', 0), 5); // a typing command
+      }
+      return child;
+    };
+    const mgr = new InjectorManager('/none', { platform: 'darwin', spawn, appName: 'VoxKey' });
+    mgr.start();
+    assert.ok(trackerChild, 'the tracker started');
+
+    // The user works in TextEdit, then clicks the keyboard (VoxKey becomes frontmost).
+    trackerChild.stderr.emit('data', Buffer.from('TextEdit\n'));
+    trackerChild.stderr.emit('data', Buffer.from('VoxKey\n'));
+    assert.strictEqual(mgr.targetApp, 'TextEdit', 'the last non-VoxKey app is the typing target');
+    await mgr.sendText('hi');
+
+    const wrapped = mgr.withTargetApp('tell application "System Events" to keystroke "hi"');
+    assert.ok(wrapped.startsWith('tell application "System Events" to set frontmost of process "TextEdit" to true'), wrapped);
+    assert.ok(wrapped.includes('delay'), 'waits for the activation to settle');
+    assert.ok(wrapped.includes('keystroke "hi"'), 'runs the original script');
+
+    // Without a known target the script is left alone.
+    mgr.targetApp = null;
+    assert.strictEqual(mgr.withTargetApp('plain'), 'plain');
+    mgr.stop();
   });
 
   it('pastes non-ASCII text and puts the old clipboard text back', async () => {
