@@ -13,13 +13,14 @@ const CLIENT_HEADER = 'x-voxkey-client';
 const MAX_TEXT_LENGTH = 5000;
 /** How long to wait for the bridge to confirm "listening" after a start, before reporting an error. */
 const START_TIMEOUT_MS = 4000;
-/**
- * How long the bridge may stay silent after it confirmed "listening": no audio levels, no speech
+/** How long the bridge may stay silent after it confirmed "listening": no audio levels, no speech
  * results, no notice that levels are unavailable. The microphone pipeline is then stuck (observed
  * on macOS when the audio system gets into a bad state), and VoxKey reports an error instead of
  * showing "Listening" forever while typing nothing.
  */
 const MIC_STUCK_TIMEOUT_MS = 5000;
+/** How long to wait before relaunching a speech bridge that crashed. */
+const BRIDGE_RELAUNCH_MS = 3000;
 /** Microphone loudness (0..1, as the bridge reports it) that counts as speech, not background noise. */
 const VOICE_LEVEL_THRESHOLD = 0.1;
 /** How long silence must last, after speech was heard, before "until-silence" mode stops by itself. */
@@ -178,6 +179,10 @@ class SpeechServer {
     this.wss = null;
     this.clients = new Set();
     this.chromeProcess = null;
+    // Bridge lifecycle: a crashed bridge relaunches by itself (unless the server is stopping).
+    this.stopping = false;
+    this.relaunchingBridge = false;
+    this.bridgeRelaunchTimer = null;
     // True only after the bridge confirmed "listening". The keyboard shows "Listening" only then.
     this.isRecording = false;
     // Set between a "start" and the bridge's confirmation.
@@ -477,6 +482,7 @@ class SpeechServer {
     console.log('[SpeechServer] Spawning isolated speech bridge...');
     const child = this.spawn(chromeExe, args, { stdio: 'ignore' });
     this.chromeProcess = child;
+    this.relaunchingBridge = false;
 
     const clear = () => {
       if (this.chromeProcess === child) this.chromeProcess = null;
@@ -484,6 +490,13 @@ class SpeechServer {
     child.on('exit', (code) => {
       console.log(`[SpeechServer] Speech bridge process exited (${code})`);
       clear();
+      // A crashed bridge (observed: a Chrome EXC_GUARD crash) left voice typing dead until the
+      // whole app was restarted. Relaunch it by itself, like the Windows typing helper.
+      if (this.stopping || this.relaunchingBridge) return;
+      this.bridgeRelaunchTimer = setTimeout(() => {
+        this.bridgeRelaunchTimer = null;
+        if (!this.stopping) this.launchChromeBridge();
+      }, BRIDGE_RELAUNCH_MS);
     });
     child.on('error', (err) => {
       console.warn('[SpeechServer] Could not start the speech bridge:', err.message);
@@ -500,6 +513,12 @@ class SpeechServer {
 
   /** Stops the Chrome bridge and starts a new one (for example after it stopped answering). */
   restartBridge() {
+    if (this.bridgeRelaunchTimer) {
+      clearTimeout(this.bridgeRelaunchTimer);
+      this.bridgeRelaunchTimer = null;
+    }
+    // The exit of the killed bridge must not schedule an automatic relaunch: a new one starts now.
+    this.relaunchingBridge = true;
     if (this.chromeProcess) {
       try {
         this.chromeProcess.kill();
@@ -576,6 +595,11 @@ class SpeechServer {
   }
 
   stop() {
+    this.stopping = true;
+    if (this.bridgeRelaunchTimer) {
+      clearTimeout(this.bridgeRelaunchTimer);
+      this.bridgeRelaunchTimer = null;
+    }
     this.clearStartTimer();
     this.clearMicStuckTimer();
     this.stopVoiceTracking();
@@ -612,6 +636,7 @@ module.exports = {
   MAX_TEXT_LENGTH,
   START_TIMEOUT_MS,
   MIC_STUCK_TIMEOUT_MS,
+  BRIDGE_RELAUNCH_MS,
   VOICE_LEVEL_THRESHOLD,
   SILENCE_TIMEOUT_MS,
   LOUD_NOISE_TIMEOUT_MS,
