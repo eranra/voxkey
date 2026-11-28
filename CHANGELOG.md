@@ -3,6 +3,19 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.9] - 2026-11-28
+
+### Fixed
+
+- **Language combobox works reliably on Windows and macOS.** The native HTML `<select>`
+  popup menu was blocked on Windows due to the non-focusable window constraint (`focusable: false`).
+  Replaced with an elegant in-DOM dropdown menu that opens smoothly, displays native language names,
+  and syncs two-way with the underlying language registry.
+- **Removed redundant close button from header.** Quitting VoxKey is cleanly managed through
+  the system tray context menu, avoiding accidental keyboard dismissals.
+- **Fixed test suite assertion ordering on Windows.** Injector integration tests now properly
+  stop the helper before asserting exit state.
+
 ## [0.3.8] - 2026-11-28
 
 ### Fixed
