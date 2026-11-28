@@ -3,7 +3,7 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-28
 
 ### Added
 
@@ -17,10 +17,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   language of the session that was already running; Chrome applies a language only when a session
   starts. Changing the language while dictating now restarts recognition in the new language
   without leaving the listening state.
-
-## [0.2.0] - 2026-11-27
-
-### Added
 
 - **A second microphone behavior: stop after silence.** *Voice Typing Mode* in the tray menu now offers
   *Toggle* (the previous behavior: on until you press the mic or F8 again) and *Stops after silence* (press

@@ -62,6 +62,13 @@ describe('packaging', () => {
     assert.match(release, /^  package:\n    needs: draft/m);
   });
 
+  it('every release bumps the minor version; there is no patch bump', () => {
+    // Releases always go 0.2.0 → 0.3.0 → 0.4.0, for Windows and macOS together.
+    // A re-added bump:patch script would make patch-only releases easy again.
+    assert.ok(pkg.scripts['bump:minor']);
+    assert.strictEqual(pkg.scripts['bump:patch'], undefined);
+  });
+
   it('the changelog has a dated entry for this version', () => {
     // A release commit must both bump the version and give the entry a date; this fails
     // when one of the two was forgotten.
