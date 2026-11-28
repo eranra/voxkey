@@ -22,6 +22,7 @@ const { Updater } = require('./src/updater');
 const { AboutWindow, aboutInfo } = require('./src/aboutWindow');
 const { createDialogs } = require('./src/dialogs');
 const { isAllowedLink, updateMenuLabel } = require('./src/update');
+const { requestMicrophoneAccess } = require('./src/micPermission');
 
 const instanceMgr = new InstanceManager();
 
@@ -47,6 +48,15 @@ function runPrimaryApp() {
   const injectorMgr = new InjectorManager(undefined, { clipboard });
   const trayMgr = new TrayManager();
   const aboutWindow = new AboutWindow(BrowserWindow);
+
+  // macOS attributes the speech bridge's microphone use to VoxKey, so VoxKey itself needs the
+  // permission. Without it the bridge receives silence and dictation types nothing (no error).
+  void requestMicrophoneAccess();
+
+  // macOS attributes the speech bridge's microphone use to VoxKey, so VoxKey itself needs the
+  // permission. Without it the bridge receives silence and dictation types nothing (see
+  // src/micPermission.js). The prompt appears once; later launches skip straight to "granted".
+  void requestMicrophoneAccess();
 
   const notify = (title, body) => {
     if (Notification.isSupported()) new Notification({ title, body, silent: true }).show();
@@ -123,8 +133,9 @@ function runPrimaryApp() {
       console.warn('[VoxKey Voice] Speech error:', error);
       sendToKeyboard('voice-state', 'idle');
       sendToKeyboard('voice-error', voiceErrorText(error));
-      // A bridge that stopped answering is replaced, so the next press of the mic works.
-      if (error === 'bridge-no-response') speechServer.restartBridge();
+      // A bridge that stopped answering, or whose microphone went silent, is replaced, so the
+      // next press of the mic works.
+      if (error === 'bridge-no-response' || error === 'mic-stuck') speechServer.restartBridge();
     },
     onAudioLevel: (level) => sendToKeyboard('audio-level', level),
     onBridgeConnect: () => {

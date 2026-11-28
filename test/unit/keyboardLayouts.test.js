@@ -281,4 +281,47 @@ describe('renderer page', () => {
     sandbox.switchLayout('upper');
     assert.strictEqual(elements['row-1'].children[0].textContent, 'ض');
   });
+
+  it('clicking the keys of every language sends each character to the injector', () => {
+    // The point of the on-screen keyboard: a key press in any language must reach the focused
+    // app of the user. The renderer sends the character through injectText; the injector
+    // (typing and clipboard paste) is covered by injector.test.js.
+    const { sandbox, elements } = loadRendererPage();
+    const typed = [];
+    const actions = [];
+    sandbox.voxkey.injectText = (text) => typed.push(text);
+    sandbox.voxkey.injectKey = (key) => actions.push(key);
+
+    const clickLetterKeys = () => {
+      for (const row of ['row-1', 'row-2', 'row-3', 'row-4']) {
+        for (const key of elements[row].children) {
+          if (!key.className.includes('key-action')) key.onclick();
+        }
+      }
+    };
+    const letterKeysOf = (layout) =>
+      layout.reduce((chars, row) => chars.concat(row.filter((k) => typeof k === 'string')), []);
+
+    const expected = [];
+    for (const lang of Object.keys(LANGUAGES)) {
+      sandbox.setKeyboardLanguage(lang);
+      sandbox.switchLayout('lower');
+      clickLetterKeys();
+      expected.push(...letterKeysOf(LANGUAGES[lang].layouts.lower));
+      sandbox.switchLayout('symbols');
+      clickLetterKeys();
+      expected.push(...letterKeysOf(LANGUAGES[lang].layouts.symbols));
+      sandbox.switchLayout('alt_symbols');
+      clickLetterKeys();
+      expected.push(...letterKeysOf(LANGUAGES[lang].layouts.alt_symbols));
+    }
+    assert.deepStrictEqual(typed, expected);
+    assert.deepStrictEqual(actions, [], 'letter keys are text, not actions');
+
+    // Action keys go through injectKey, so they press the real special key.
+    sandbox.setKeyboardLanguage(DEFAULT_LANGUAGE);
+    const space = elements['row-4'].children.find((k) => k.className.includes('key-space'));
+    space.onclick();
+    assert.deepStrictEqual(actions, ['SPACE']);
+  });
 });

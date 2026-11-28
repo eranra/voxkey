@@ -13,6 +13,13 @@ const CLIENT_HEADER = 'x-voxkey-client';
 const MAX_TEXT_LENGTH = 5000;
 /** How long to wait for the bridge to confirm "listening" after a start, before reporting an error. */
 const START_TIMEOUT_MS = 4000;
+/**
+ * How long the bridge may stay silent after it confirmed "listening": no audio levels, no speech
+ * results, no notice that levels are unavailable. The microphone pipeline is then stuck (observed
+ * on macOS when the audio system gets into a bad state), and VoxKey reports an error instead of
+ * showing "Listening" forever while typing nothing.
+ */
+const MIC_STUCK_TIMEOUT_MS = 5000;
 /** Microphone loudness (0..1, as the bridge reports it) that counts as speech, not background noise. */
 const VOICE_LEVEL_THRESHOLD = 0.1;
 /** How long silence must last, after speech was heard, before "until-silence" mode stops by itself. */
@@ -77,6 +84,8 @@ function voiceErrorText(error) {
       return 'Voice typing could not start: the speech window is hidden. Press the mic again.';
     case 'bridge-no-response':
       return 'The speech service did not respond. It is restarting; press the mic again in a moment.';
+    case 'mic-stuck':
+      return 'The microphone is not responding. The speech service is restarting; if this keeps happening, restart Chrome.';
     case 'not-allowed':
     case 'service-not-allowed':
       return 'Chrome may not use the microphone. Allow it for Google Chrome in your system privacy settings.';
@@ -93,9 +102,30 @@ function voiceErrorText(error) {
   }
 }
 
+/**
+ * Best-effort cleanup of bridge profile directories from earlier launches. Each launch creates a
+ * fresh one; leftovers from crashed apps would otherwise pile up in the temporary directory.
+ * Directories younger than a day are left alone, so a bridge that is still running is never
+ * disrupted. The legacy fixed directory ("voxkey-speech-profile") is removed the same way.
+ */
+function removeStaleBridgeProfiles(keepDir, tmpDir = os.tmpdir()) {
+  try {
+    for (const name of fs.readdirSync(tmpDir)) {
+      if (!name.startsWith('voxkey-speech-')) continue;
+      const dir = path.join(tmpDir, name);
+      if (dir === keepDir) continue;
+      try {
+        const stats = fs.statSync(dir);
+        if (Date.now() - stats.mtimeMs > 24 * 60 * 60 * 1000) {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 /** Places where Google Chrome is usually installed on Windows and macOS. */
-function chromeCandidates(env = process.env, home = os.homedir()) {
-  const programFiles = env.ProgramFiles || 'C:\\Program Files';
+function chromeCandidates(env = process.env, home = os.homedir()) {  const programFiles = env.ProgramFiles || 'C:\\Program Files';
   const programFilesX86 = env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
   const localAppData = env.LOCALAPPDATA || '';
   const macApp = 'Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -133,6 +163,9 @@ function parseBridgeMessage(raw) {
   if (data.type === 'audio_level' && typeof data.level === 'number' && Number.isFinite(data.level)) {
     return { type: 'audio_level', level: Math.min(1, Math.max(0, data.level)) };
   }
+  if (data.type === 'levels_error') {
+    return { type: 'levels_error' };
+  }
   return null;
 }
 
@@ -148,6 +181,9 @@ class SpeechServer {
     // Set between a "start" and the bridge's confirmation.
     this.startTimer = null;
     this.startTimeoutMs = options.startTimeoutMs || START_TIMEOUT_MS;
+    // Set after the bridge confirmed "listening", while waiting for a sign that audio flows.
+    this.micStuckTimer = null;
+    this.micStuckMs = options.micStuckMs || MIC_STUCK_TIMEOUT_MS;
     this.bridgeVisible = null;
     this.currentLang = 'en-US';
     // 'toggle': stays on until the user stops it. 'until-silence': also stops by itself after silence.
@@ -287,15 +323,21 @@ class SpeechServer {
       if (this.isRecording && !wasRecording) this.startVoiceTracking();
       else if (!this.isRecording) this.stopVoiceTracking();
       this.onSpeechStatus(data.status);
+      // "Listening" is now shown to the user. From here, the bridge must show within a few
+      // seconds that audio actually flows (levels, results, or a "levels unavailable" notice).
+      if (this.isRecording) this.armMicStuckTimer();
+      else this.clearMicStuckTimer();
     } else if (data.type === 'speech_result') {
       // Recognized text is also proof that the user is speaking; it drives silence detection too.
       if (this.isRecording && (data.interim || data.final)) {
         this.markVoiceActivity();
         this.lastSpeechResultAt = Date.now();
       }
+      this.clearMicStuckTimer();
       this.onSpeechResult(data);
     } else if (data.type === 'speech_error') {
       this.clearStartTimer();
+      this.clearMicStuckTimer();
       this.isRecording = false;
       this.stopVoiceTracking();
       console.warn(`[SpeechServer] Speech bridge error: ${data.error}`);
@@ -304,6 +346,8 @@ class SpeechServer {
       this.bridgeVisible = data.visible;
       if (!data.visible) console.warn('[SpeechServer] The speech bridge page is hidden; Chrome delivers no results while hidden.');
     } else if (data.type === 'audio_level') {
+      // Any level message proves the microphone pipeline is alive, even at volume zero.
+      this.clearMicStuckTimer();
       if (this.isRecording) {
         this.onAudioLevel(data.level);
         if (data.level >= this.voiceLevelThreshold) {
@@ -311,7 +355,34 @@ class SpeechServer {
           this.lastLoudAt = Date.now();
         }
       }
+    } else if (data.type === 'levels_error') {
+      // The bridge cannot measure levels (dictation itself may still work); do not wait for them.
+      this.clearMicStuckTimer();
     }
+  }
+
+  /**
+   * Starts the clock that catches a bridge that confirmed "listening" while its microphone
+   * delivers nothing at all: no levels, no results, no notice. That state was observed when the
+   * macOS audio system got stuck; without this clock VoxKey shows "Listening" forever and types
+   * nothing.
+   */
+  armMicStuckTimer() {
+    this.clearMicStuckTimer();
+    this.micStuckTimer = setTimeout(() => {
+      this.micStuckTimer = null;
+      if (!this.isRecording) return;
+      console.warn('[SpeechServer] The bridge is listening but the microphone delivers nothing; reporting an error.');
+      this.isRecording = false;
+      this.stopVoiceTracking();
+      this.broadcast({ command: 'stop' });
+      this.onSpeechError('mic-stuck');
+    }, this.micStuckMs);
+  }
+
+  clearMicStuckTimer() {
+    if (this.micStuckTimer) clearTimeout(this.micStuckTimer);
+    this.micStuckTimer = null;
   }
 
   /** Remembers that speech is happening right now, so silence can be measured from this moment. */
@@ -392,8 +463,12 @@ class SpeechServer {
     }
 
     // Isolated user-data-dir so browser launches as a separate dedicated process
-    // and does NOT collide with or get swallowed by user's already-running browser tabs
-    const profileDir = path.join(os.tmpdir(), 'voxkey-speech-profile');
+    // and does NOT collide with or get swallowed by user's already-running browser tabs.
+    // A fresh directory per launch: a long-lived profile once got into a state where the speech
+    // recognizer ended every session instantly, without any error, while the microphone itself
+    // kept working (macOS, 2026-11-28). Recreating the profile on every launch contains that.
+    const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'voxkey-speech-'));
+    removeStaleBridgeProfiles(profileDir);
 
     const args = bridgeArgs(this.port, profileDir);
 
@@ -439,6 +514,7 @@ class SpeechServer {
   /** Stops a recording, whether the user asked for it or silence ended it. */
   stopRecording() {
     this.clearStartTimer();
+    this.clearMicStuckTimer();
     this.stopVoiceTracking();
     this.broadcast({ command: 'stop' });
     this.isRecording = false;
@@ -499,6 +575,7 @@ class SpeechServer {
 
   stop() {
     this.clearStartTimer();
+    this.clearMicStuckTimer();
     this.stopVoiceTracking();
     if (this.chromeProcess) {
       try {
@@ -532,11 +609,13 @@ module.exports = {
   CLIENT_HEADER,
   MAX_TEXT_LENGTH,
   START_TIMEOUT_MS,
+  MIC_STUCK_TIMEOUT_MS,
   VOICE_LEVEL_THRESHOLD,
   SILENCE_TIMEOUT_MS,
   LOUD_NOISE_TIMEOUT_MS,
   SpeechServer,
   bridgeArgs,
+  removeStaleBridgeProfiles,
   allowedOrigins,
   chromeCandidates,
   isTrustedRequest,
