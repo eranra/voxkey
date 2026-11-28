@@ -29,6 +29,7 @@ describe('InjectorManager Integration Tests', () => {
       await new Promise(r => setTimeout(r, 200));
       assert.strictEqual(mgr.isAlive(), true);
 
+      mgr.stop();
       await new Promise(r => setTimeout(r, 200));
       assert.strictEqual(mgr.isAlive(), false);
     }
