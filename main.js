@@ -160,12 +160,19 @@ function runPrimaryApp() {
   }
 
   /** Runs the startup check once the keyboard window exists, so the warning is actually shown.
-   *  The microphone is requested with the window focused, so the system prompt can appear. */
+   *  The microphone is requested with the window focused, so the system prompt can appear.
+   *  While something is missing, the permissions are re-checked every few seconds, so the
+   *  warning bar clears by itself the moment the user flips the switch in System Settings. */
   function scheduleStartupPermissionCheck() {
-    setTimeout(() => {
-      void refreshPermissions().then(async (state) => {
-        if (state && state.microphone === 'not-determined') await askMicrophone();
-      });
+    setTimeout(async () => {
+      const state = await refreshPermissions();
+      if (state && state.microphone === 'not-determined') await askMicrophone();
+      if (state && (!state.typing || !canDictate(state.microphone))) {
+        const timer = setInterval(async () => {
+          const next = await refreshPermissions({ openPanes: false });
+          if (next && next.typing && canDictate(next.microphone)) clearInterval(timer);
+        }, 3000);
+      }
     }, 1500);
   }
 
