@@ -3,6 +3,16 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.7] - 2026-11-28
+
+### Fixed
+
+- **The on-screen keyboard no longer stops typing into other apps.** While a permission dialog
+  was open, a second request could leave the keyboard window focusable; every key click then
+  stole the focus and the typed characters landed in the keyboard itself. The permission focus
+  requests now run one after another, always restore the not-focusable state, and hand keyboard
+  focus back. Restarting VoxKey also clears a stuck state.
+
 ## [0.3.6] - 2026-11-28
 
 ### Fixed
