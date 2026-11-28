@@ -75,7 +75,7 @@ Then give VoxKey the [permissions](#-macos-permissions) it needs to type.
 
 | Action | How |
 | :--- | :--- |
-| Start or stop voice typing, from any app | **F8**, or **Ctrl + Shift + Space** (**Cmd + Shift + Space** on macOS), or the microphone button |
+| Start or stop voice typing, from any app | **F8**, or **Ctrl + Shift + Space** (**Cmd + Shift + Space** on macOS), or the microphone button. The shortcut is configurable in the tray menu (*Voice Shortcut*), including the right Option or right Command key on macOS |
 | Choose the microphone behavior | **Voice Typing Mode** in the tray menu: *Toggle* (on until you press again) or *Stops after silence* (stops by itself about two seconds after you stop speaking). The mic button shows a small clock badge in the second mode. |
 | Choose the dictation language | The language list in the keyboard header (EN, ES, FR, DE, HE, AR, RU, ZH). The keyboard switches to that language's layout, voice recognition switches with it, and VoxKey remembers it. |
 | Collapse to a small floating pill | Chevron **▼** |
@@ -121,7 +121,8 @@ If keys do nothing on macOS, one of the first two permissions is missing.
 - **The log says "Could not start on port 19876":** another program uses VoxKey's local port, so voice typing
   cannot start. Close that program. VoxKey listens only on `127.0.0.1`, so the port is not reachable from
   other computers.
-- **F8 does not work:** another app has registered F8 as a global shortcut. Use **Ctrl/Cmd + Shift + Space**.
+- **F8 does not work:** another app has registered F8 as a global shortcut. Use **Ctrl/Cmd + Shift + Space**, or pick another shortcut in the tray menu.
+- **Hold-to-talk (macOS):** choose *Voice Typing Mode → Hold shortcut* in the tray menu, and optionally *Voice Shortcut → Right Option*. Listening follows the key: press and hold to dictate, release to stop.
 
 ## 🛠️ Build from source
 

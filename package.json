@@ -34,6 +34,7 @@
     "start": "electron .",
     "prestart:minimized": "node scripts/ensure-electron.js",
     "start:minimized": "electron . --minimized",
+    "build:keyhelper": "node scripts/build-keyhelper.js",
     "test": "node --test test/unit/*.test.js test/integration/*.test.js",
     "lint": "node scripts/check-syntax.js",
     "check": "npm run lint && npm test",

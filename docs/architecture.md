@@ -21,7 +21,10 @@ Electron has no speech recognition of its own, so VoxKey uses Google Chrome's We
    (`launchChromeBridge()`): a long-lived profile once got into a state where the speech recognizer
    ended every session instantly, without any error, while the microphone itself kept working
    (macOS, 2026-11-28). Leftover directories from earlier launches are removed after a day.
-3. `stt.html` connects back over WebSocket. On F8, the server sends `{command: 'start', lang}`; the page sends
+3. `stt.html` connects back over WebSocket. On the voice shortcut (F8 by default, configurable in the
+   tray; the right Option / right Command keys and hold-to-talk are watched by the compiled key-state
+   helper `bin/keystate-macos`, built from `scripts/keystate.swift`), the server sends `{command: 'start', lang}`;
+   the page sends
    `status`, `speech_result` (interim and final text), `speech_error`, `bridge_state` (visible or hidden),
    `audio_level` (microphone loudness, 0..1, about ten times a second while listening) and `levels_error`
    (the loudness cannot be measured; dictation itself may still work).

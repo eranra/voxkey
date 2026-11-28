@@ -1,4 +1,5 @@
 const { PATHS, APP_VERSION } = require('./config');
+const { SHORTCUTS, shortcutChoices } = require('./shortcutManager');
 
 /**
  * Builds the tray menu as plain data, so it can be tested without Electron.
@@ -9,23 +10,28 @@ function buildTrayMenuModel({
   version = APP_VERSION,
   updateLabel = null,
   checkForUpdates = true,
-  voiceMode = 'toggle'
+  voiceMode = 'toggle',
+  voiceShortcut = 'f8',
+  platform = process.platform
 } = {}) {
   const separator = { type: 'separator' };
   const top = updateLabel ? [{ label: updateLabel, command: 'update' }, separator] : [];
+  // 'hold' needs key-release detection, which only the macOS helper provides.
+  const holdSupported = platform === 'darwin';
+  const shortcutLabel = (SHORTCUTS[voiceShortcut] || SHORTCUTS.f8).label;
   return [
     ...top,
     { label: `VoxKey v${version}`, enabled: false },
     separator,
     { label: 'Show / Hide Keyboard', command: 'toggleKeyboard' },
-    { label: 'Toggle Voice Typing (F8)', command: 'toggleVoice' },
+    { label: `Toggle Voice Typing (${shortcutLabel})`, command: 'toggleVoice' },
     {
       label: 'Voice Typing Mode',
       submenu: [
         {
           label: 'Toggle — stays on until pressed again',
           type: 'radio',
-          checked: voiceMode !== 'until-silence',
+          checked: voiceMode === 'toggle',
           command: 'setVoiceModeToggle'
         },
         {
@@ -33,8 +39,27 @@ function buildTrayMenuModel({
           type: 'radio',
           checked: voiceMode === 'until-silence',
           command: 'setVoiceModeUntilSilence'
-        }
+        },
+        ...(holdSupported
+          ? [
+              {
+                label: 'Hold shortcut — listens while held',
+                type: 'radio',
+                checked: voiceMode === 'hold',
+                command: 'setVoiceModeHold'
+              }
+            ]
+          : [])
       ]
+    },
+    {
+      label: 'Voice Shortcut',
+      submenu: shortcutChoices(platform).map((choice) => ({
+        label: choice.label,
+        type: 'radio',
+        checked: voiceShortcut === choice.key,
+        command: `setVoiceShortcut:${choice.key}`
+      }))
     },
     separator,
     { label: 'About VoxKey', command: 'about' },
@@ -86,7 +111,8 @@ class TrayManager {
     if (process.platform === 'darwin') icon.setTemplateImage(true);
 
     this.tray = new Tray(icon);
-    this.tray.setToolTip(`VoxKey v${APP_VERSION}\nPress F8 to dictate\nClick to Show/Hide`);
+    const shortcut = (SHORTCUTS[options.voiceShortcut] || SHORTCUTS.f8).label;
+    this.tray.setToolTip(`VoxKey v${APP_VERSION}\nPress ${shortcut} to dictate\nClick to Show/Hide`);
     this.refresh(options);
 
     this.tray.on('click', () => run('toggleKeyboard'));

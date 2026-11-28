@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { parseVersion } = require('./update');
+const { SHORTCUTS } = require('./shortcutManager');
+
+const SHORTCUT_KEYS = Object.keys(SHORTCUTS);
 
 const DEFAULT_SETTINGS = Object.freeze({
   /** Check GitHub for new versions on start and every few hours. */
@@ -9,12 +12,15 @@ const DEFAULT_SETTINGS = Object.freeze({
   lastAnnouncedVersion: null,
   /** Speech recognition language, for example "en-US". */
   language: 'en-US',
-  /** How the microphone behaves: 'toggle' stays on until pressed again, 'until-silence' stops by itself. */
-  voiceMode: 'toggle'
+  /** How the microphone behaves: 'toggle' stays on until pressed again, 'until-silence' stops
+   *  by itself, 'hold' listens while the shortcut is held (macOS). */
+  voiceMode: 'toggle',
+  /** The voice activation shortcut; a key of SHORTCUTS in src/shortcutManager.js. */
+  voiceShortcut: 'f8'
 });
 
-/** The two microphone behaviors. */
-const VOICE_MODES = ['toggle', 'until-silence'];
+/** The microphone behaviors. */
+const VOICE_MODES = ['toggle', 'until-silence', 'hold'];
 
 /** Returns valid settings from any saved value. Unknown keys and wrong types fall back to the defaults. */
 function normalizeSettings(raw) {
@@ -25,7 +31,8 @@ function normalizeSettings(raw) {
     language: typeof value.language === 'string' && /^[a-z]{2,3}(-[A-Z]{2})?$/.test(value.language)
       ? value.language
       : DEFAULT_SETTINGS.language,
-    voiceMode: VOICE_MODES.includes(value.voiceMode) ? value.voiceMode : DEFAULT_SETTINGS.voiceMode
+    voiceMode: VOICE_MODES.includes(value.voiceMode) ? value.voiceMode : DEFAULT_SETTINGS.voiceMode,
+    voiceShortcut: SHORTCUT_KEYS.includes(value.voiceShortcut) ? value.voiceShortcut : DEFAULT_SETTINGS.voiceShortcut
   };
 }
 

@@ -3,6 +3,21 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **The voice activation shortcut is configurable** (tray menu → *Voice Shortcut*): F8 (the
+  default), F6, Ctrl+Shift+Space, or the **right Option** or **right Command** key on macOS.
+  The choice is saved with the other settings and applied immediately. Modifier shortcuts are
+  watched by a small key-state helper, because a bare modifier cannot be a system-wide global
+  shortcut.
+- **A third voice input mode: hold the shortcut to talk** (tray menu → *Voice Typing Mode* →
+  *Hold shortcut*). Listening starts when the key goes down and stops when it is released; the
+  recognized text is typed after the release. Together with the right Option shortcut this
+  replaces external "hold a key and transcribe" scripts. macOS only (it needs key-release
+  detection); the two existing modes and the Windows build are unchanged.
+
 ## [0.3.11] - 2026-11-28
 
 ### Fixed
