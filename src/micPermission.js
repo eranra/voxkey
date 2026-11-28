@@ -9,10 +9,12 @@ const { systemPreferences } = require('electron');
  * nothing (observed on macOS, 2026-11-28). Asking once at startup makes macOS show the usual
  * "VoxKey would like to access the microphone" prompt.
  *
+/**
  * @param prefs injected for tests; defaults to Electron's systemPreferences
+ * @param platform injected for tests; defaults to the process platform
  */
-async function requestMicrophoneAccess(prefs = systemPreferences) {
-  if (process.platform !== 'darwin' || !prefs || typeof prefs.getMediaAccessStatus !== 'function') {
+async function requestMicrophoneAccess(prefs = systemPreferences, platform = process.platform) {
+  if (platform !== 'darwin' || !prefs || typeof prefs.getMediaAccessStatus !== 'function') {
     return 'unavailable';
   }
   const status = prefs.getMediaAccessStatus('microphone');

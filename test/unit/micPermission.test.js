@@ -31,25 +31,25 @@ function fakePrefs(status, askResult = true) {
 describe('microphone permission (macOS)', () => {
   it('asks when the state is not determined', async () => {
     const prefs = fakePrefs('not-determined');
-    assert.strictEqual(await requestMicrophoneAccess(prefs), 'granted');
+    assert.strictEqual(await requestMicrophoneAccess(prefs, 'darwin'), 'granted');
     assert.strictEqual(prefs.calls.asked, 1, 'the system prompt was requested');
   });
 
   it('does not ask again once granted', async () => {
     const prefs = fakePrefs('granted');
-    assert.strictEqual(await requestMicrophoneAccess(prefs), 'granted');
+    assert.strictEqual(await requestMicrophoneAccess(prefs, 'darwin'), 'granted');
     assert.strictEqual(prefs.calls.asked, 0);
   });
 
   it('does not ask when access was denied; the user must change it in System Settings', async () => {
     const prefs = fakePrefs('denied');
-    assert.strictEqual(await requestMicrophoneAccess(prefs), 'denied');
+    assert.strictEqual(await requestMicrophoneAccess(prefs, 'darwin'), 'denied');
     assert.strictEqual(prefs.calls.asked, 0, 'a denied state gets no prompt');
   });
 
   it('reports the refusal when the user declines the prompt', async () => {
     const prefs = fakePrefs('not-determined', false);
-    assert.strictEqual(await requestMicrophoneAccess(prefs), 'denied');
+    assert.strictEqual(await requestMicrophoneAccess(prefs, 'darwin'), 'denied');
     assert.strictEqual(prefs.calls.asked, 1);
   });
 });
