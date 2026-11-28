@@ -87,4 +87,34 @@ function canDictate(state) {
   return state === 'granted' || state === 'not-determined' || state === 'unknown';
 }
 
-module.exports = { canDictate, canType, microphoneState, openPermissionSettings };
+/**
+ * Runs `ask` while the given window can take keyboard focus, and restores the window afterwards.
+ *
+ * The keyboard window is not focusable (so clicks never steal focus from the app being typed
+ * into), but macOS attaches its permission prompts to the app's active window: without one, a
+ * microphone request is denied silently and the prompt never appears. Making the window briefly
+ * focusable lets the system show the dialog; VoxKey then shows up in the Microphone list.
+ *
+ * @param getWindow returns the BrowserWindow to focus, or null
+ * @param ask the permission request; its result is returned
+ */
+async function askWithFocusedWindow(getWindow, ask) {
+  const win = typeof getWindow === 'function' ? getWindow() : null;
+  const focusable = win && !win.isDestroyed() && typeof win.setFocusable === 'function';
+  const wasFocusable = focusable && typeof win.isFocusable === 'function' ? win.isFocusable() : false;
+  if (focusable) {
+    win.setFocusable(true);
+    win.show();
+    win.focus();
+  }
+  try {
+    return await ask();
+  } finally {
+    if (focusable && !win.isDestroyed()) {
+      // The keyboard window is normally not focusable; keep it that way after the prompt.
+      win.setFocusable(wasFocusable);
+    }
+  }
+}
+
+module.exports = { askWithFocusedWindow, canDictate, canType, microphoneState, openPermissionSettings };

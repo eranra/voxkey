@@ -23,7 +23,7 @@ const { AboutWindow, aboutInfo } = require('./src/aboutWindow');
 const { createDialogs } = require('./src/dialogs');
 const { isAllowedLink, updateMenuLabel } = require('./src/update');
 const { requestMicrophoneAccess } = require('./src/micPermission');
-const { canDictate, canType, microphoneState, openPermissionSettings } = require('./src/permissions');
+const { askWithFocusedWindow, canDictate, canType, microphoneState, openPermissionSettings } = require('./src/permissions');
 
 const instanceMgr = new InstanceManager();
 
@@ -59,9 +59,11 @@ function runPrimaryApp() {
   const trayMgr = new TrayManager();
   const aboutWindow = new AboutWindow(BrowserWindow);
 
-  // macOS attributes the speech bridge's microphone use to VoxKey, so VoxKey itself needs the
-  // permission. Without it the bridge receives silence and dictation types nothing (no error).
-  void requestMicrophoneAccess();
+  /** Asks for microphone access while the keyboard window can take focus, so macOS can show
+   *  the system prompt (the window is normally not focusable, and a prompt with no active
+   *  window is denied silently — that is why VoxKey never appeared in the Microphone list). */
+  const askMicrophone = () =>
+    askWithFocusedWindow(() => windowMgr.getWindow(), requestMicrophoneAccess);
 
   const notify = (title, body) => {
     if (Notification.isSupported()) new Notification({ title, body, silent: true }).show();
@@ -157,10 +159,13 @@ function runPrimaryApp() {
     return { typing, microphone };
   }
 
-  /** Runs the startup check once the keyboard window exists, so the warning is actually shown. */
+  /** Runs the startup check once the keyboard window exists, so the warning is actually shown.
+   *  The microphone is requested with the window focused, so the system prompt can appear. */
   function scheduleStartupPermissionCheck() {
     setTimeout(() => {
-      void refreshPermissions();
+      void refreshPermissions().then(async (state) => {
+        if (state && state.microphone === 'not-determined') await askMicrophone();
+      });
     }, 1500);
   }
 
@@ -187,10 +192,11 @@ function runPrimaryApp() {
     void (async () => {
       let microphone = await microphoneState();
       if (microphone === 'not-determined') {
-        // Ask once; a real prompt resolves granted or denied after the user answers. A result
-        // that is neither means macOS refused to show the prompt at all (unsigned builds): the
-        // user must switch VoxKey on in the settings pane instead.
-        const askResult = await requestMicrophoneAccess();
+        // Ask with the window focused, so macOS can show the prompt; a real prompt resolves
+        // granted or denied after the user answers. A result that is neither means macOS
+        // refused to show the prompt at all: the user must switch VoxKey on in the settings
+        // pane instead.
+        const askResult = await askMicrophone();
         microphone = askResult === 'granted' ? 'granted' : 'denied';
       }
       if (!canDictate(microphone)) {

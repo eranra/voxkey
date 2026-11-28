@@ -21,7 +21,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
   }
   return originalLoad(request, parent, isMain);
 };
-const { canDictate, canType, microphoneState, openPermissionSettings } = require('../../src/permissions');
+const { askWithFocusedWindow, canDictate, canType, microphoneState, openPermissionSettings } = require('../../src/permissions');
 Module._load = originalLoad;
 
 describe('canType (the Accessibility permission for typing)', () => {
@@ -135,6 +135,48 @@ describe('openPermissionSettings', () => {
     openedUrls.length = 0;
     assert.strictEqual(openPermissionSettings('microphone', 'win32'), true);
     assert.deepStrictEqual(openedUrls, ['ms-settings:privacy-microphone']);
+  });
+});
+
+describe('askWithFocusedWindow (macOS shows permission prompts only for an active window)', () => {
+  function fakeWindow({ focusable = false, destroyed = false } = {}) {
+    const calls = [];
+    const win = {
+      isDestroyed: () => destroyed,
+      isFocusable: () => calls.filter((c) => c.op === 'setFocusable').at(-1)?.value ?? focusable,
+      setFocusable: (value) => calls.push({ op: 'setFocusable', value }),
+      show: () => calls.push({ op: 'show' }),
+      focus: () => calls.push({ op: 'focus' })
+    };
+    return { win, calls };
+  }
+
+  it('focuses the window around the request and restores the not-focusable state', async () => {
+    const { win, calls } = fakeWindow();
+    const result = await askWithFocusedWindow(() => win, async () => 'granted');
+    assert.strictEqual(result, 'granted');
+    assert.deepStrictEqual(
+      calls.map((c) => (c.op === 'setFocusable' ? `setFocusable(${c.value})` : c.op)),
+      ['setFocusable(true)', 'show', 'focus', 'setFocusable(false)'],
+      'the window takes focus during the prompt and gives it back'
+    );
+  });
+
+  it('leaves a focusable window focusable', async () => {
+    const { win, calls } = fakeWindow({ focusable: true });
+    await askWithFocusedWindow(() => win, async () => 'granted');
+    assert.deepStrictEqual(
+      calls.map((c) => (c.op === 'setFocusable' ? `setFocusable(${c.value})` : c.op)),
+      ['setFocusable(true)', 'show', 'focus', 'setFocusable(true)']
+    );
+  });
+
+  it('restores the window even when the request fails, and works without a window', async () => {
+    const { win, calls } = fakeWindow();
+    await assert.rejects(askWithFocusedWindow(() => win, () => Promise.reject(new Error('no TCC'))), /no TCC/);
+    assert.strictEqual(calls.at(-1).op === 'setFocusable' && calls.at(-1).value, false, 'restored');
+    const result = await askWithFocusedWindow(() => null, async () => 'unavailable');
+    assert.strictEqual(result, 'unavailable');
   });
 });
 
