@@ -3,6 +3,17 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.8] - 2026-11-28
+
+### Fixed
+
+- **The on-screen keyboard types into your app again (macOS).** On newer macOS versions,
+  clicking the keyboard window activates VoxKey even though the window is not focusable: every
+  key press stole the focus, and the typed characters landed in the keyboard itself. Dictation
+  was unaffected, because speaking does not touch the mouse. VoxKey now follows the app you are
+  working in and re-activates it before every keystroke, so clicked keys land where you were
+  typing — for keyboard clicks and dictation alike.
+
 ## [0.3.7] - 2026-11-28
 
 ### Fixed
