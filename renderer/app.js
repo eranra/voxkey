@@ -105,6 +105,40 @@ function setKeyboardLanguage(langKey) {
   renderKeyboard();
 }
 
+// Permission warnings: when macOS blocks typing (Accessibility) or the microphone, the header
+// shows what to allow, with a button that opens the right system settings pane.
+const permissionWarning = document.getElementById('permission-warning');
+const permissionWarningText = document.getElementById('permission-warning-text');
+const permissionWarningBtn = document.getElementById('permission-warning-btn');
+
+let permissionPaneToOpen = null;
+
+function applyPermissions(state) {
+  if (!permissionWarning) return;
+  const problems = [];
+  if (state && state.typing === false) {
+    problems.push({ pane: 'accessibility', text: 'VoxKey cannot type: allow it in Privacy & Security > Accessibility.' });
+  }
+  if (state && (state.microphone === 'denied' || state.microphone === 'restricted')) {
+    problems.push({ pane: 'microphone', text: 'Voice typing needs the microphone: allow it in Privacy & Security > Microphone.' });
+  }
+  if (problems.length === 0) {
+    permissionWarning.hidden = true;
+    return;
+  }
+  permissionWarningText.textContent = problems.map((p) => p.text).join(' ');
+  permissionPaneToOpen = problems[0].pane;
+  permissionWarning.hidden = false;
+}
+
+if (permissionWarningBtn) {
+  permissionWarningBtn.onclick = () => {
+    if (permissionPaneToOpen) api.openPermissionSettings(permissionPaneToOpen);
+  };
+}
+
+api.onPermissions(applyPermissions);
+
 // Voice Typing Controls
 micBtn.onclick = () => {
   api.toggleVoice();

@@ -86,6 +86,8 @@ function voiceErrorText(error) {
       return 'The speech service did not respond. It is restarting; press the mic again in a moment.';
     case 'mic-stuck':
       return 'The microphone is not responding. The speech service is restarting; if this keeps happening, restart Chrome.';
+    case 'mic-permission':
+      return 'VoxKey needs microphone access. Allow it in System Settings > Privacy & Security > Microphone, then press the mic again.';
     case 'not-allowed':
     case 'service-not-allowed':
       return 'Chrome may not use the microphone. Allow it for Google Chrome in your system privacy settings.';

@@ -544,6 +544,7 @@ describe('voice errors', () => {
     assert.match(voiceErrorText('page-hidden'), /hidden/);
     assert.match(voiceErrorText('bridge-no-response'), /did not respond/);
     assert.match(voiceErrorText('mic-stuck'), /microphone/i);
+    assert.match(voiceErrorText('mic-permission'), /microphone/i);
     assert.match(voiceErrorText('not-allowed'), /microphone/i);
     assert.match(voiceErrorText('network'), /internet/);
     assert.match(voiceErrorText('audio-capture'), /microphone/i);

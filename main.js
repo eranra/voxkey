@@ -23,6 +23,7 @@ const { AboutWindow, aboutInfo } = require('./src/aboutWindow');
 const { createDialogs } = require('./src/dialogs');
 const { isAllowedLink, updateMenuLabel } = require('./src/update');
 const { requestMicrophoneAccess } = require('./src/micPermission');
+const { canDictate, canType, microphoneState, openPermissionSettings } = require('./src/permissions');
 
 const instanceMgr = new InstanceManager();
 
@@ -45,17 +46,21 @@ if (app.requestSingleInstanceLock()) {
 function runPrimaryApp() {
   const store = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'));
   const windowMgr = new WindowManager();
-  const injectorMgr = new InjectorManager(undefined, { clipboard });
+  const injectorMgr = new InjectorManager(undefined, {
+    clipboard,
+    // A failed typing command usually means the Accessibility permission is gone (a reinstall
+    // gets a new signature). Tell the user instead of dropping the keystroke silently.
+    onMacError: () => {
+      pushPermissions({ typing: false });
+      openPermissionPane('accessibility', 'a typing command failed');
+      void refreshPermissions({ openPanes: false });
+    }
+  });
   const trayMgr = new TrayManager();
   const aboutWindow = new AboutWindow(BrowserWindow);
 
   // macOS attributes the speech bridge's microphone use to VoxKey, so VoxKey itself needs the
   // permission. Without it the bridge receives silence and dictation types nothing (no error).
-  void requestMicrophoneAccess();
-
-  // macOS attributes the speech bridge's microphone use to VoxKey, so VoxKey itself needs the
-  // permission. Without it the bridge receives silence and dictation types nothing (see
-  // src/micPermission.js). The prompt appears once; later launches skip straight to "granted".
   void requestMicrophoneAccess();
 
   const notify = (title, body) => {
@@ -111,13 +116,91 @@ function runPrimaryApp() {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   }
 
+  // ---- Permissions: the app must tell the user when it cannot type or listen ----------------------
+  //
+  // On macOS every reinstall (ad-hoc signed, new signature) needs fresh Accessibility and
+  // Microphone grants; without them typing and dictation fail silently. The keyboard window
+  // shows a warning, and the matching system settings pane opens when the user tries anyway.
+
+  let lastPaneOpenedAt = 0;
+  /** Opens a settings pane at most once every few seconds, so it cannot spam over key presses. */
+  function openPermissionPane(permission, reason) {
+    console.warn(`[VoxKey] Missing permission: ${permission} (${reason}).`);
+    const now = Date.now();
+    if (now - lastPaneOpenedAt > 5000) {
+      lastPaneOpenedAt = now;
+      openPermissionSettings(permission);
+    }
+  }
+
+  // The last known state; partial updates (from a failed typing command) must not clear the
+  // microphone warning, so the two are merged before the keyboard window is told.
+  let lastPermissions = { typing: true, microphone: 'unknown' };
+
+  function pushPermissions(patch) {
+    lastPermissions = Object.assign({}, lastPermissions, patch);
+    sendToKeyboard('permissions', lastPermissions);
+  }
+
+  /** Checks both permissions, tells the keyboard window, and opens the pane of what is missing. */
+  async function refreshPermissions({ openPanes = true } = {}) {
+    const typing = canType();
+    const microphone = await microphoneState();
+    pushPermissions({ typing, microphone });
+    if (!typing) {
+      if (openPanes) openPermissionPane('accessibility', 'typing is blocked');
+      return { typing, microphone };
+    }
+    if (!canDictate(microphone)) {
+      if (openPanes) openPermissionPane('microphone', `state: ${microphone}`);
+    }
+    return { typing, microphone };
+  }
+
+  /** Runs the startup check once the keyboard window exists, so the warning is actually shown. */
+  function scheduleStartupPermissionCheck() {
+    setTimeout(() => {
+      void refreshPermissions();
+    }, 1500);
+  }
+
+  /** Runs a typing command only when the Accessibility permission allows it. */
+  function gateTyping(action) {
+    if (canType()) {
+      action();
+      return;
+    }
+    // Without Accessibility the keystroke would fail silently; tell the user instead.
+    pushPermissions({ typing: false });
+    openPermissionPane('accessibility', 'a key was pressed');
+    void refreshPermissions({ openPanes: false });
+  }
+
   function handleToggleVoice(forceLang = null) {
     // If the keyboard is hidden, show it so the user sees the transcript.
     const win = windowMgr.getWindow();
     if (win && (!win.isVisible() || win.isMinimized())) {
       windowMgr.show();
     }
-    speechServer.toggleVoice(forceLang);
+    // Dictation cannot work without the microphone; block the start with a clear message
+    // instead of letting the bridge listen to silence.
+    void (async () => {
+      let microphone = await microphoneState();
+      if (microphone === 'not-determined') {
+        // Ask once; a real prompt resolves granted or denied after the user answers. A result
+        // that is neither means macOS refused to show the prompt at all (unsigned builds): the
+        // user must switch VoxKey on in the settings pane instead.
+        const askResult = await requestMicrophoneAccess();
+        microphone = askResult === 'granted' ? 'granted' : 'denied';
+      }
+      if (!canDictate(microphone)) {
+        pushPermissions({ microphone });
+        sendToKeyboard('voice-error', voiceErrorText('mic-permission'));
+        openPermissionPane('microphone', `state: ${microphone}`);
+        return;
+      }
+      speechServer.toggleVoice(forceLang);
+    })();
   }
 
   const speechServer = new SpeechServer({
@@ -134,8 +217,12 @@ function runPrimaryApp() {
       sendToKeyboard('voice-state', 'idle');
       sendToKeyboard('voice-error', voiceErrorText(error));
       // A bridge that stopped answering, or whose microphone went silent, is replaced, so the
-      // next press of the mic works.
-      if (error === 'bridge-no-response' || error === 'mic-stuck') speechServer.restartBridge();
+      // next press of the mic works. A silent microphone is often a missing permission, so the
+      // keyboard warning is refreshed too.
+      if (error === 'bridge-no-response' || error === 'mic-stuck') {
+        speechServer.restartBridge();
+        void refreshPermissions({ openPanes: false });
+      }
     },
     onAudioLevel: (level) => sendToKeyboard('audio-level', level),
     onBridgeConnect: () => {
@@ -218,6 +305,7 @@ function runPrimaryApp() {
     windowMgr.createWindow(BrowserWindow, screen, startMinimized);
     trayMgr.createTray(runCommand);
     refreshTray();
+    scheduleStartupPermissionCheck();
 
     // 4. Global shortcuts: F8 and Ctrl+Shift+Space (Cmd+Shift+Space on macOS).
     const registeredF8 = globalShortcut.register('F8', () => handleToggleVoice());
@@ -230,9 +318,12 @@ function runPrimaryApp() {
   });
 
   // Messages from the pages (see renderer/preload.js).
-  ipcMain.on('inject-text', (event, text) => injectorMgr.sendText(String(text)));
-  ipcMain.on('inject-key', (event, keyName) => injectorMgr.sendKey(String(keyName)));
+  ipcMain.on('inject-text', (event, text) => gateTyping(() => injectorMgr.sendText(String(text))));
+  ipcMain.on('inject-key', (event, keyName) => gateTyping(() => injectorMgr.sendKey(String(keyName))));
   ipcMain.on('toggle-voice', () => handleToggleVoice());
+  ipcMain.on('open-permission-settings', (event, permission) => {
+    if (['accessibility', 'microphone'].includes(permission)) openPermissionSettings(permission);
+  });
   ipcMain.on('set-lang', (event, lang) => {
     const saved = store.update({ language: lang }).language;
     speechServer.setLanguage(saved);

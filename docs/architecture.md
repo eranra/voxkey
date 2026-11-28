@@ -8,10 +8,13 @@ without Node.js and talk to the main process only through `renderer/preload.js`.
 
 Electron has no speech recognition of its own, so VoxKey uses Google Chrome's Web Speech API:
 
-0. **macOS: VoxKey asks for microphone access at startup** (`src/micPermission.js`). macOS
-   attributes the microphone use of the Chrome bridge to the app that started it — VoxKey — and a
-   missing grant arrives as silent audio with no error: the mic indicator moves, but nothing is
-   ever recognized. The system prompt appears once.
+0. **Permissions are checked, not assumed** (`src/permissions.js`). On macOS every reinstall of the
+   unsigned (ad-hoc signed) app is a new identity, so the Accessibility and Microphone grants can
+   vanish; typing and dictation would then fail silently. The app checks both at startup and when
+   the user presses a key or starts dictation, shows a warning bar in the keyboard window, opens
+   the matching system settings pane, and reports failed typing commands (a non-zero osascript
+   exit) instead of swallowing them. On Windows the global microphone privacy switch is read from
+   the registry before dictation starts.
 1. `src/speechServer.js` starts an HTTP and WebSocket server on `127.0.0.1:19876`.
 2. It starts Chrome with a separate profile and `--app=http://127.0.0.1:19876/stt.html`, in a small window
    (`bridgeArgs()` in `src/speechServer.js`). The profile directory is created fresh on every launch
