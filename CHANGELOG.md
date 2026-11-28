@@ -3,6 +3,17 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.11] - 2026-11-28
+
+### Fixed
+
+- **Hebrew (and other non-ASCII) dictation types into your app again (macOS).** Non-ASCII text
+  is pasted through the clipboard, and the previous clipboard content was restored after only
+  300 ms — busy applications (browsers, WhatsApp, Slack, VS Code) process the paste later than
+  that and pasted nothing: the words appeared in the keyboard but never reached the target,
+  while English (typed as direct keystrokes) kept working. The restore now waits 1.5 seconds,
+  and never overwrites a clipboard the user changed in the meantime.
+
 ## [0.3.10] - 2026-11-28
 
 ### Fixed
