@@ -1,7 +1,7 @@
 {
   "name": "voxkey",
   "productName": "VoxKey",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "VoxKey: on-screen keyboard with real-time voice typing for Windows and macOS",
   "license": "MIT",
   "author": {
