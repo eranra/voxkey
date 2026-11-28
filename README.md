@@ -22,7 +22,8 @@ It never takes the keyboard focus away from that app.
 ## 💻 Windows and macOS
 
 VoxKey is built and tested on both systems. Every change runs the test suite on Windows and on macOS
-in CI, and every release has installers for both.
+in CI. Every release ships installers for both systems together, always at the same version, and every
+release bumps the minor version (0.2.0, 0.3.0, …).
 
 | | Windows 10 / 11 | macOS 12 or newer |
 | :--- | :--- | :--- |
