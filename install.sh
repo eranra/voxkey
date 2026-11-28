@@ -99,6 +99,7 @@ case "$mode" in
     say "Installing build tools (npm)…"
     npm install --no-audit --no-fund
     npm run setup
+    npm run build:keyhelper
     arch="$(machine_arch)"
     say "Building the app…"
     npx electron-builder --mac --dir "--${arch}" --publish never

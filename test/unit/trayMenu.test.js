@@ -23,23 +23,59 @@ describe('tray menu', () => {
     assert.strictEqual(find(buildTrayMenuModel({ checkForUpdates: false })).checked, false);
   });
 
-  it('offers the two microphone modes as radio items, one checked', () => {
-    const submenu = buildTrayMenuModel({ voiceMode: 'toggle' }).find((i) => i.label === 'Voice Typing Mode').submenu;
+  it('offers the microphone modes as radio items, one checked', () => {
+    const submenu = buildTrayMenuModel({ voiceMode: 'toggle', platform: 'win32' })
+      .find((i) => i.label === 'Voice Typing Mode').submenu;
     assert.deepStrictEqual(submenu.map((i) => i.command), ['setVoiceModeToggle', 'setVoiceModeUntilSilence']);
     assert.strictEqual(submenu.every((i) => i.type === 'radio'), true);
     assert.strictEqual(submenu.filter((i) => i.checked).length, 1);
 
-    const auto = buildTrayMenuModel({ voiceMode: 'until-silence' }).find((i) => i.label === 'Voice Typing Mode').submenu;
+    const auto = buildTrayMenuModel({ voiceMode: 'until-silence', platform: 'win32' })
+      .find((i) => i.label === 'Voice Typing Mode').submenu;
     assert.strictEqual(auto.find((i) => i.command === 'setVoiceModeUntilSilence').checked, true);
     assert.strictEqual(auto.find((i) => i.command === 'setVoiceModeToggle').checked, false);
-
-    const fallback = buildTrayMenuModel({}).find((i) => i.label === 'Voice Typing Mode').submenu;
+    const fallback = buildTrayMenuModel({ platform: 'win32' }).find((i) => i.label === 'Voice Typing Mode').submenu;
     assert.strictEqual(fallback.find((i) => i.command === 'setVoiceModeToggle').checked, true, 'unknown mode falls back to toggle');
+  });
+
+  it('macOS also offers hold-to-talk, and marks the checked mode', () => {
+    const submenu = buildTrayMenuModel({ voiceMode: 'hold', platform: 'darwin' })
+      .find((i) => i.label === 'Voice Typing Mode').submenu;
+    assert.deepStrictEqual(
+      submenu.map((i) => i.command),
+      ['setVoiceModeToggle', 'setVoiceModeUntilSilence', 'setVoiceModeHold']
+    );
+    assert.strictEqual(submenu.find((i) => i.command === 'setVoiceModeHold').checked, true);
+    assert.strictEqual(submenu.filter((i) => i.checked).length, 1);
+    // Windows does not get the hold option (it needs the macOS key-state helper).
+    const win = buildTrayMenuModel({ voiceMode: 'hold', platform: 'win32' })
+      .find((i) => i.label === 'Voice Typing Mode').submenu;
+    assert.ok(!win.some((i) => i.command === 'setVoiceModeHold'));
+  });
+
+  it('offers the voice shortcuts, with the configured one checked', () => {
+    const submenu = buildTrayMenuModel({ voiceShortcut: 'rightOption', platform: 'darwin' })
+      .find((i) => i.label === 'Voice Shortcut').submenu;
+    assert.ok(submenu.length >= 3);
+    assert.ok(submenu.every((i) => i.type === 'radio'));
+    assert.strictEqual(submenu.find((i) => i.command === 'setVoiceShortcut:rightOption').checked, true);
+    assert.strictEqual(submenu.find((i) => i.command === 'setVoiceShortcut:f8').checked, false);
+    // The right-side modifier shortcuts are macOS only.
+    const win = buildTrayMenuModel({ platform: 'win32' }).find((i) => i.label === 'Voice Shortcut').submenu;
+    assert.ok(win.every((i) => !i.command.includes('rightOption') && !i.command.includes('rightCommand')));
+  });
+
+  it('the toggle item names the configured shortcut', () => {
+    const model = buildTrayMenuModel({ voiceShortcut: 'rightOption', platform: 'darwin' });
+    assert.match(model.find((i) => i.command === 'toggleVoice').label, /Right Option/);
   });
 
   it('becomes an Electron template whose clicks run the command', () => {
     const ran = [];
-    const template = toMenuTemplate(buildTrayMenuModel({ version: '1.0.0', voiceMode: 'until-silence' }), (c) => ran.push(c));
+    const template = toMenuTemplate(
+      buildTrayMenuModel({ version: '1.0.0', voiceMode: 'until-silence', platform: 'win32' }),
+      (c) => ran.push(c)
+    );
     assert.strictEqual(template[0].enabled, false);
     assert.strictEqual(template[0].click, undefined);
     template.find((i) => i.label === 'About VoxKey').click();
@@ -53,6 +89,11 @@ describe('tray menu', () => {
     assert.deepStrictEqual(radios.map((i) => i.checked), [false, true]);
     radios[1].click();
     assert.deepStrictEqual(ran, ['about', 'toggleAutoUpdate', 'setVoiceModeUntilSilence']);
+
+    // Shortcut submenu items run their command too.
+    const shortcutItem = template.find((i) => i.label === 'Voice Shortcut');
+    shortcutItem.submenu[0].click();
+    assert.deepStrictEqual(ran.at(-1), 'setVoiceShortcut:f8');
   });
 
   it('uses a small tray icon for each system, not the 1024 px app icon', () => {

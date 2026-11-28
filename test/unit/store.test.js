@@ -14,7 +14,7 @@ describe('settings', () => {
 
   it('drops wrong types and unsafe values', () => {
     const s = normalizeSettings({ checkForUpdates: 'yes', lastAnnouncedVersion: '<script>', language: '../../etc', extra: 1 });
-    assert.deepStrictEqual(s, { checkForUpdates: true, lastAnnouncedVersion: null, language: 'en-US', voiceMode: 'toggle' });
+    assert.deepStrictEqual(s, { ...DEFAULT_SETTINGS });
     assert.strictEqual(normalizeSettings({ lastAnnouncedVersion: '0.3.0' }).lastAnnouncedVersion, '0.3.0');
     assert.strictEqual(normalizeSettings({ language: 'he-IL' }).language, 'he-IL');
   });
@@ -22,8 +22,17 @@ describe('settings', () => {
   it('keeps a valid microphone mode and replaces anything else with the default', () => {
     assert.strictEqual(normalizeSettings({ voiceMode: 'until-silence' }).voiceMode, 'until-silence');
     assert.strictEqual(normalizeSettings({ voiceMode: 'toggle' }).voiceMode, 'toggle');
+    assert.strictEqual(normalizeSettings({ voiceMode: 'hold' }).voiceMode, 'hold');
     for (const bad of ['hold-to-talk', '', null, 1, {}, []]) {
       assert.strictEqual(normalizeSettings({ voiceMode: bad }).voiceMode, 'toggle', String(bad));
+    }
+  });
+
+  it('keeps a valid voice shortcut and replaces anything else with the default', () => {
+    assert.strictEqual(normalizeSettings({ voiceShortcut: 'rightOption' }).voiceShortcut, 'rightOption');
+    assert.strictEqual(normalizeSettings({ voiceShortcut: 'f6' }).voiceShortcut, 'f6');
+    for (const bad of ['F9', 'right-option', '', null, 1, {}, []]) {
+      assert.strictEqual(normalizeSettings({ voiceShortcut: bad }).voiceShortcut, 'f8', String(bad));
     }
   });
 
@@ -32,10 +41,10 @@ describe('settings', () => {
     const file = path.join(dir, 'nested', 'settings.json');
     try {
       const store = new SettingsStore(file);
-      store.update({ checkForUpdates: false, language: 'fr-FR', voiceMode: 'until-silence' });
+      store.update({ checkForUpdates: false, language: 'fr-FR', voiceMode: 'until-silence', voiceShortcut: 'f6' });
       assert.deepStrictEqual(
         new SettingsStore(file).get(),
-        { checkForUpdates: false, lastAnnouncedVersion: null, language: 'fr-FR', voiceMode: 'until-silence' }
+        { ...DEFAULT_SETTINGS, checkForUpdates: false, language: 'fr-FR', voiceMode: 'until-silence', voiceShortcut: 'f6' }
       );
       assert.strictEqual(fs.existsSync(`${file}.tmp`), false);
 

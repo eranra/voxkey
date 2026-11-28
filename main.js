@@ -24,6 +24,7 @@ const { createDialogs } = require('./src/dialogs');
 const { isAllowedLink, updateMenuLabel } = require('./src/update');
 const { requestMicrophoneAccess } = require('./src/micPermission');
 const { askWithFocusedWindow, canDictate, canType, microphoneState, openPermissionSettings } = require('./src/permissions');
+const { ShortcutManager } = require('./src/shortcutManager');
 
 const instanceMgr = new InstanceManager();
 
@@ -59,6 +60,7 @@ function runPrimaryApp() {
   });
   const trayMgr = new TrayManager();
   const aboutWindow = new AboutWindow(BrowserWindow);
+  const shortcutMgr = new ShortcutManager({ globalShortcut });
 
   /** Asks for microphone access while the keyboard window can take focus, so macOS can show
    *  the system prompt (the window is normally not focusable, and a prompt with no active
@@ -109,7 +111,8 @@ function runPrimaryApp() {
     trayMgr.refresh({
       updateLabel: updateMenuLabel(updater.state),
       checkForUpdates: store.get().checkForUpdates,
-      voiceMode: store.get().voiceMode
+      voiceMode: store.get().voiceMode,
+      voiceShortcut: store.get().voiceShortcut
     });
   }
 
@@ -284,11 +287,26 @@ function runPrimaryApp() {
         refreshTray();
         break;
       case 'setVoiceModeToggle':
-      case 'setVoiceModeUntilSilence': {
-        const mode = command === 'setVoiceModeUntilSilence' ? 'until-silence' : 'toggle';
+      case 'setVoiceModeUntilSilence':
+      case 'setVoiceModeHold': {
+        const mode =
+          command === 'setVoiceModeUntilSilence' ? 'until-silence' : command === 'setVoiceModeHold' ? 'hold' : 'toggle';
         store.update({ voiceMode: mode });
         speechServer.setVoiceMode(mode);
+        shortcutMgr.configure(store.get().voiceShortcut, mode);
         sendToKeyboard('voice-mode', mode);
+        refreshTray();
+        break;
+      }
+      case 'setVoiceShortcut:f8':
+      case 'setVoiceShortcut:f6':
+      case 'setVoiceShortcut:ctrlShiftSpace':
+      case 'setVoiceShortcut:rightOption':
+      case 'setVoiceShortcut:rightCommand': {
+        const shortcut = command.split(':')[1];
+        store.update({ voiceShortcut: shortcut });
+        shortcutMgr.configure(shortcut, store.get().voiceMode);
+        console.log(`[VoxKey Engine] Voice shortcut changed to: ${shortcut}`);
         refreshTray();
         break;
       }
@@ -323,18 +341,35 @@ function runPrimaryApp() {
 
     // 3. Keyboard window and tray icon.
     windowMgr.createWindow(BrowserWindow, screen, startMinimized);
-    trayMgr.createTray(runCommand);
+    trayMgr.createTray(runCommand, { voiceShortcut: store.get().voiceShortcut });
     refreshTray();
     scheduleStartupPermissionCheck();
 
-    // 4. Global shortcuts: F8 and Ctrl+Shift+Space (Cmd+Shift+Space on macOS).
-    const registeredF8 = globalShortcut.register('F8', () => handleToggleVoice());
-    const registeredCombo = globalShortcut.register('CommandOrControl+Shift+Space', () => handleToggleVoice());
+    // 4. The voice activation shortcut (configured in the tray; F8 by default) and the fixed
+    //    Ctrl+Shift+Space combination. Modifier shortcuts and 'hold' mode run the key-state
+    //    helper, so the release of the key can stop the dictation.
+    shortcutMgr.onActivate = () => {
+      if (shortcutMgr.mode === 'hold') {
+        // Start listening when the key goes down (if it is not already running).
+        if (!speechServer.isRecording && !speechServer.startTimer) handleToggleVoice();
+      } else {
+        handleToggleVoice();
+      }
+    };
+    shortcutMgr.onRelease = () => {
+      // 'hold' mode: the key was let go — stop listening; the recognized text is still typed.
+      if (speechServer.isRecording || speechServer.startTimer) handleToggleVoice();
+    };
+    shortcutMgr.configure(store.get().voiceShortcut, store.get().voiceMode);
+    const registeredCombo =
+      store.get().voiceShortcut === 'ctrlShiftSpace' || globalShortcut.register('CommandOrControl+Shift+Space', () => handleToggleVoice());
 
     // 5. Update checks (packaged builds only).
     updater.start();
 
-    console.log(`[VoxKey v${APP_VERSION}] Ready. Shortcuts: F8 (${registeredF8}), Ctrl+Shift+Space (${registeredCombo})`);
+    console.log(
+      `[VoxKey v${APP_VERSION}] Ready. Shortcut: ${shortcutMgr.shortcut} (${shortcutMgr.mode}), Ctrl+Shift+Space (${registeredCombo})`
+    );
   });
 
   // Messages from the pages (see renderer/preload.js).
@@ -361,6 +396,7 @@ function runPrimaryApp() {
   ipcMain.handle('get-about', () => currentAboutInfo());
 
   app.on('will-quit', () => {
+    shortcutMgr.stop();
     globalShortcut.unregisterAll();
     updater.stop();
     trayMgr.destroy();
