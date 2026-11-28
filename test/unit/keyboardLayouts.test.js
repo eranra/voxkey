@@ -246,7 +246,8 @@ function loadRendererPage() {
     resizeWindow() {}, hideToTray() {}, closeApp() {}, openAbout() {},
     getInfo: () => Promise.resolve({ version: 'test', language: DEFAULT_LANGUAGE, voiceMode: 'toggle' }),
     onVoiceState() {}, onSpeechUpdate() {}, onVoiceError() {},
-    onAudioLevel() {}, onVoiceMode() {}
+    onAudioLevel() {}, onVoiceMode() {},
+    onPermissions() {}, openPermissionSettings() {}
   };
 
   vm.runInNewContext(languagesSource, sandbox);

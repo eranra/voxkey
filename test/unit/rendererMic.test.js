@@ -79,7 +79,9 @@ function loadRendererPage({ voiceMode = 'toggle' } = {}) {
     onSpeechUpdate: (fn) => (listeners.speechUpdate = fn),
     onVoiceError: (fn) => (listeners.voiceError = fn),
     onAudioLevel: (fn) => (listeners.audioLevel = fn),
-    onVoiceMode: (fn) => (listeners.voiceMode = fn)
+    onVoiceMode: (fn) => (listeners.voiceMode = fn),
+    onPermissions: (fn) => (listeners.permissions = fn),
+    openPermissionSettings() {}
   };
 
   let frames = [];

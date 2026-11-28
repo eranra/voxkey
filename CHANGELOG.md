@@ -3,6 +3,24 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **VoxKey now tells you when macOS permissions are missing, instead of failing silently.**
+  Every reinstall of the unsigned app needs fresh Accessibility and Microphone grants; before,
+  key presses and dictation then did nothing, with no explanation. Now:
+  - the keyboard shows a red warning bar ("VoxKey cannot type: allow it in Privacy & Security >
+    Accessibility", and the same for the microphone) with an **Open Settings** button;
+  - pressing a key or starting dictation with a missing permission opens the matching system
+    settings pane (the macOS privacy panes, the Windows microphone privacy page);
+  - the permissions are also checked at startup, and a typing command that fails mid-run
+    (permission revoked, osascript error) is reported instead of being swallowed;
+  - dictation refuses to start while the microphone is denied, with instructions, instead of
+    listening to silence.
+  On Windows, the global "Let desktop apps access your microphone" switch is checked before
+  dictation starts.
+
 ## [0.3.0] - 2026-11-28
 
 The multi-language release. Everything below, including the changes listed under 0.2.0, ships in

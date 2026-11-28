@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('voxkey', {
   onVoiceError: (listener) => ipcRenderer.on('voice-error', (_event, message) => listener(message)),
   onAudioLevel: (listener) => ipcRenderer.on('audio-level', (_event, level) => listener(level)),
   onVoiceMode: (listener) => ipcRenderer.on('voice-mode', (_event, mode) => listener(mode)),
+  onPermissions: (listener) => ipcRenderer.on('permissions', (_event, state) => listener(state)),
+  openPermissionSettings: (permission) => ipcRenderer.send('open-permission-settings', String(permission)),
 
   // About window
   openAbout: () => ipcRenderer.send('open-about'),

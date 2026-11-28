@@ -50,6 +50,37 @@ describe('InjectorManager on macOS', () => {
     ]);
   });
 
+  it('reports a failing osascript (missing Accessibility permission) instead of failing silently', async () => {
+    const errors = [];
+    const spawn = (cmd, args) => {
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setTimeout(() => {
+        child.stderr.emit('data', Buffer.from('36:49: execution error: osascript is not allowed to send keystrokes. (1002)'));
+        child.emit('exit', 1);
+      }, 5);
+      return child;
+    };
+    const mgr = new InjectorManager('/none', { platform: 'darwin', spawn, onMacError: (detail) => errors.push(detail) });
+    await mgr.sendText('hello');
+    assert.strictEqual(errors.length, 1, 'the failure is reported');
+    assert.match(errors[0], /not allowed to send keystrokes/);
+  });
+
+  it('does not report a successful command, or one killed by a signal', async () => {
+    const errors = [];
+    const spawn = (cmd, args) => {
+      const child = new EventEmitter();
+      const killed = args[1].includes('killme');
+      setTimeout(() => child.emit('exit', killed ? null : 0), 5);
+      return child;
+    };
+    const mgr = new InjectorManager('/none', { platform: 'darwin', spawn, onMacError: (detail) => errors.push(detail) });
+    await mgr.sendText('fine');
+    await mgr.sendText('killme');
+    assert.deepStrictEqual(errors, []);
+  });
+
   it('pastes non-ASCII text and puts the old clipboard text back', async () => {
     const log = [];
     let clip = 'old';

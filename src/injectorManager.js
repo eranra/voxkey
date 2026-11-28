@@ -49,6 +49,8 @@ class InjectorManager {
     this.platform = deps.platform || process.platform;
     this.spawn = deps.spawn || childProcess.spawn;
     this.clipboard = deps.clipboard || null;
+    // Called when a macOS typing command fails (missing Accessibility permission, ...).
+    this.onMacError = deps.onMacError || null;
     this.process = null;
     this.isStopping = false;
     // macOS commands run one after another, so fast key presses arrive in order.
@@ -152,19 +154,39 @@ class InjectorManager {
   osascript(script) {
     return new Promise((resolve) => {
       let child;
+      let stderr = '';
       try {
         child = this.spawn('osascript', ['-e', script]);
       } catch (err) {
-        console.warn('[InjectorManager] osascript failed:', err.message);
+        this.reportMacError(`spawn failed: ${err.message}`);
         resolve();
         return;
       }
+      if (child.stderr) {
+        child.stderr.on('data', (d) => {
+          stderr += d.toString();
+        });
+      }
       child.on('error', (err) => {
-        console.warn('[InjectorManager] osascript failed:', err.message);
+        this.reportMacError(err.message);
         resolve();
       });
-      child.on('exit', () => resolve());
+      child.on('exit', (code) => {
+        // A missing Accessibility permission makes osascript exit non-zero ("osascript is not
+        // allowed to send keystrokes"); without this check the typing fails silently.
+        // A signal kill arrives as code null and is not an osascript failure.
+        if (typeof code === 'number' && code !== 0) {
+          this.reportMacError(`exit ${code}: ${stderr.trim().split('\n')[0] || 'no output'}`);
+        }
+        resolve();
+      });
     });
+  }
+
+  /** Reports a failed typing command (missing permission, and the like) to the app. */
+  reportMacError(detail) {
+    console.warn('[InjectorManager] osascript failed:', detail);
+    if (this.onMacError) this.onMacError(detail);
   }
 
   stop() {
