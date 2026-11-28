@@ -48,6 +48,7 @@ function runPrimaryApp() {
   const windowMgr = new WindowManager();
   const injectorMgr = new InjectorManager(undefined, {
     clipboard,
+    appName: app.name,
     // A failed typing command usually means the Accessibility permission is gone (a reinstall
     // gets a new signature). Tell the user instead of dropping the keystroke silently.
     onMacError: () => {

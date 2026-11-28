@@ -29,9 +29,11 @@ describe('InjectorManager Integration Tests', () => {
       await new Promise(r => setTimeout(r, 200));
       assert.strictEqual(mgr.isAlive(), true);
 
-      mgr.stop();
       await new Promise(r => setTimeout(r, 200));
       assert.strictEqual(mgr.isAlive(), false);
     }
+    // On macOS start() launches the frontmost-app tracker; without stop() the test process
+    // would never exit.
+    mgr.stop();
   });
 });

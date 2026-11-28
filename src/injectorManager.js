@@ -39,6 +39,25 @@ function macTextPlan(text) {
 const CLIPBOARD_RESTORE_MS = 300;
 
 /**
+ * AppleScript that reports every change of the frontmost application on stderr, forever.
+ * The keyboard window steals the focus on click on newer macOS versions, so typing must
+ * re-activate the app the user was in first (see withTargetApp).
+ */
+const FRONTMOST_TRACKER_SCRIPT = `
+set lastApp to ""
+repeat
+  tell application "System Events" to set f to (name of first application process whose frontmost is true)
+  if f is not lastApp then
+    set lastApp to f
+    log f
+  end if
+  delay 0.25
+end repeat`;
+
+/** Milliseconds between activating the target app and typing into it. */
+const ACTIVATE_SETTLE_MS = 150;
+
+/**
  * Types text and keys into the app that has keyboard focus.
  * - Windows: a long-running helper (bin/injector.exe, built from native/injector.cs) reads commands on stdin.
  * - macOS: AppleScript through `osascript`. Needs Accessibility permission.
@@ -51,19 +70,68 @@ class InjectorManager {
     this.clipboard = deps.clipboard || null;
     // Called when a macOS typing command fails (missing Accessibility permission, ...).
     this.onMacError = deps.onMacError || null;
-    this.process = null;
+    // The name of our own process; the frontmost tracker ignores it.
+    this.appName = deps.appName || 'VoxKey';
+    // The app the user was in before the keyboard window took the focus; typing goes there.
+    this.targetApp = null;
+    this.trackerProcess = null;
     this.isStopping = false;
+    this.process = null;
     // macOS commands run one after another, so fast key presses arrive in order.
     this.macQueue = Promise.resolve();
   }
 
+  /**
+   * Follows the frontmost application (macOS). Clicking the keyboard window activates VoxKey on
+   * newer macOS versions even though the window is not focusable, which would otherwise send the
+   * typed keys into the keyboard itself; remembering the user's app lets typing go back to it.
+   */
+  startFrontmostTracker() {
+    if (this.trackerProcess || this.isStopping) return;
+    try {
+      const child = this.spawn('osascript', ['-e', FRONTMOST_TRACKER_SCRIPT]);
+      this.trackerProcess = child;
+      let buffer = '';
+      child.stderr.on('data', (chunk) => {
+        buffer += chunk.toString();
+        let index;
+        while ((index = buffer.indexOf('\n')) >= 0) {
+          const name = buffer.slice(0, index).trim();
+          buffer = buffer.slice(index + 1);
+          if (name && name !== this.appName) this.targetApp = name;
+        }
+      });
+      child.on('exit', () => {
+        this.trackerProcess = null;
+        if (!this.isStopping) setTimeout(() => this.startFrontmostTracker(), 1000);
+      });
+      child.on('error', () => {
+        this.trackerProcess = null;
+      });
+    } catch (err) {
+      this.trackerProcess = null;
+    }
+  }
+
+  /** A script that first re-activates the app the user is typing into, then runs `script`. */
+  withTargetApp(script) {
+    if (this.platform !== 'darwin' || !this.targetApp) return script;
+    const name = appleScriptString(this.targetApp);
+    return (
+      `tell application "System Events" to set frontmost of process ${name} to true\n` +
+      `delay ${(ACTIVATE_SETTLE_MS / 1000).toFixed(3)}\n` +
+      script
+    );
+  }
+
   start() {
+    this.isStopping = false;
+    if (this.platform === 'darwin') this.startFrontmostTracker();
     if (this.platform !== 'win32' || !fs.existsSync(this.injectorPath)) {
       return false;
     }
 
     try {
-      this.isStopping = false;
       this.process = this.spawn(this.injectorPath, [], {
         stdio: ['pipe', 'ignore', 'ignore'],
         windowsHide: true
@@ -129,7 +197,7 @@ class InjectorManager {
 
   /** Queues one AppleScript. Returns a promise that resolves when it has finished. */
   runMac(script) {
-    this.macQueue = this.macQueue.then(() => this.osascript(script));
+    this.macQueue = this.macQueue.then(() => this.osascript(this.withTargetApp(script)));
     return this.macQueue;
   }
 
@@ -143,7 +211,7 @@ class InjectorManager {
     this.macQueue = this.macQueue.then(async () => {
       const previous = clipboard.readText();
       clipboard.writeText(text);
-      await this.osascript(pasteScript);
+      await this.osascript(this.withTargetApp(pasteScript));
       await new Promise((r) => setTimeout(r, CLIPBOARD_RESTORE_MS));
       // Only restore if nothing else changed the clipboard in the meantime.
       if (clipboard.readText() === text) clipboard.writeText(previous);
@@ -191,6 +259,12 @@ class InjectorManager {
 
   stop() {
     this.isStopping = true;
+    if (this.trackerProcess) {
+      try {
+        this.trackerProcess.kill();
+      } catch (e) {}
+      this.trackerProcess = null;
+    }
     if (this.process) {
       try {
         this.process.kill();
@@ -206,6 +280,7 @@ class InjectorManager {
 
 module.exports = {
   CLIPBOARD_RESTORE_MS,
+  ACTIVATE_SETTLE_MS,
   InjectorManager,
   MAC_KEY_SCRIPTS,
   appleScriptString,
