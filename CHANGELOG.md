@@ -3,6 +3,13 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-11-28
+
+### Fixed
+
+- **A crashed speech bridge now restarts by itself.** A Chrome crash left voice typing dead until
+  the whole app was restarted; the bridge is now replaced automatically after three seconds.
+
 ## [0.3.2] - 2026-11-28
 
 ### Fixed
