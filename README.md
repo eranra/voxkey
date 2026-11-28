@@ -81,7 +81,7 @@ Then give VoxKey the [permissions](#-macos-permissions) it needs to type.
 | Collapse to a small floating pill | Chevron **▼** |
 | Expand the pill back to the keyboard | Keyboard **⌨** |
 | Hide to the tray / menu bar | Minus **—** |
-| Quit | Close **✕**, or **Quit VoxKey** in the tray menu |
+| Quit | **Quit VoxKey** in the tray menu |
 | About, version and updates | Click the VoxKey logo, or **About VoxKey** in the tray menu |
 
 Only one VoxKey runs at a time. Starting it again shows the running keyboard. Starting a **newer** version

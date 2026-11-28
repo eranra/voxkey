@@ -344,9 +344,11 @@ if (hideBtn) {
   };
 }
 
-closeBtn.onclick = () => {
-  api.closeApp();
-};
+if (closeBtn) {
+  closeBtn.onclick = () => {
+    api.closeApp();
+  };
+}
 
 // Listen for speech status and text from main process
 api.onVoiceState((state) => {
