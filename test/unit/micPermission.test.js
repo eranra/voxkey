@@ -52,4 +52,10 @@ describe('microphone permission (macOS)', () => {
     assert.strictEqual(await requestMicrophoneAccess(prefs, 'darwin'), 'denied');
     assert.strictEqual(prefs.calls.asked, 1);
   });
+
+  it('is a no-op outside macOS', async () => {
+    const prefs = fakePrefs('not-determined');
+    assert.strictEqual(await requestMicrophoneAccess(prefs, 'win32'), 'unavailable');
+    assert.strictEqual(prefs.calls.asked, 0);
+  });
 });
