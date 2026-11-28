@@ -118,3 +118,91 @@ describe('SpeechServer Unit & Integration Tests', () => {
     ws.close();
   });
 });
+
+describe('setLanguage switches the recognition language', () => {
+  const TEST_PORT = 19997;
+  let server;
+  const errors = [];
+
+  before(async () => {
+    server = new SpeechServer({
+      port: TEST_PORT,
+      startTimeoutMs: 150,
+      onSpeechError: (e) => errors.push(e)
+    });
+    await server.start();
+  });
+
+  after(() => server.stop());
+
+  async function connectBridge(onMessage) {
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`);
+    await new Promise((r) => ws.on('open', r));
+    ws.on('message', (raw) => onMessage(JSON.parse(raw.toString()), ws));
+    return ws;
+  }
+
+  it('while dictating, broadcasts a new start with the new language', async () => {
+    const commands = [];
+    const ws = await connectBridge((msg, sock) => {
+      commands.push(msg);
+      if (msg.command === 'start') sock.send(JSON.stringify({ type: 'status', status: 'listening' }));
+    });
+
+    server.toggleVoice('en-US');
+    await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(server.isRecording, true, 'dictation confirmed');
+    commands.length = 0;
+
+    server.setLanguage('he-IL');
+    await new Promise((r) => setTimeout(r, 50));
+    assert.deepStrictEqual(commands, [{ command: 'start', lang: 'he-IL' }]);
+    assert.strictEqual(server.isRecording, true, 'still dictating after the switch');
+
+    server.toggleVoice(); // stop, so the next test starts idle
+    ws.close();
+    await new Promise((r) => setTimeout(r, 30));
+  });
+
+  it('while idle, stores the language and sends nothing', async () => {
+    const commands = [];
+    const ws = await connectBridge((msg) => commands.push(msg));
+    await new Promise((r) => setTimeout(r, 30));
+
+    server.setLanguage('fr-FR');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(commands, [], 'no message while idle');
+
+    // The next dictation picks up the stored language.
+    server.toggleVoice();
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(commands, [{ command: 'start', lang: 'fr-FR' }]);
+
+    server.toggleVoice();
+    ws.close();
+    await new Promise((r) => setTimeout(r, 30));
+  });
+
+  it('while a start is still unconfirmed, re-broadcasts without stacking a second start timer', async () => {
+    errors.length = 0;
+    const commands = [];
+    const ws = await connectBridge((msg) => commands.push(msg)); // ignores every start
+
+    server.toggleVoice('en-US');
+    assert.ok(server.startTimer, 'a start is pending');
+    server.setLanguage('de-DE');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepStrictEqual(commands, [
+      { command: 'start', lang: 'en-US' },
+      { command: 'start', lang: 'de-DE' }
+    ]);
+    assert.ok(server.startTimer, 'the same single start timer is still pending');
+
+    // The one pending timer still fires once when the bridge never confirms.
+    await new Promise((r) => setTimeout(r, 200));
+    assert.deepStrictEqual(errors, ['bridge-no-response']);
+
+    ws.close();
+    await new Promise((r) => setTimeout(r, 30));
+  });
+});

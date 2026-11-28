@@ -474,7 +474,16 @@ class SpeechServer {
   }
 
   setLanguage(lang) {
+    const changed = Boolean(lang) && lang !== this.currentLang;
     this.currentLang = lang;
+    if (changed && (this.isRecording || this.startTimer)) {
+      // Chrome applies recognition.lang only when a session starts, so a running session would
+      // keep the old language. Ask the bridge to start again in the new language; it ends the
+      // old session and restarts by itself (see startListening in stt.html). The pending start
+      // timer, if any, stays as it is: the bridge's confirmation clears it.
+      console.log(`[SpeechServer] Switching dictation to ${this.currentLang}...`);
+      this.broadcast({ command: 'start', lang: this.currentLang });
+    }
   }
 
   /** Changes the microphone behavior: 'toggle' or 'until-silence'. Applies even while recording. */

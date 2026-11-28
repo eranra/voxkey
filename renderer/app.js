@@ -1,34 +1,9 @@
 // `window.voxkey` comes from preload.js. This page has no Node.js access.
+// `window.VoxKeyLanguages` comes from languages.js, loaded before this file.
 const api = window.voxkey;
+const { LANGUAGES, DEFAULT_LANGUAGE } = window.VoxKeyLanguages;
 
-// Layout definitions
-const LAYOUTS = {
-  lower: [
-    ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-    ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
-    [{ action: 'shift', label: '⇧' }, 'z', 'x', 'c', 'v', 'b', 'n', 'm', { action: 'backspace', label: '⌫' }],
-    [{ action: 'symbols', label: '?123' }, ',', { action: 'space', label: 'English' }, '.', { action: 'enter', label: '↵' }]
-  ],
-  upper: [
-    ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
-    ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
-    [{ action: 'shift', label: '⬆', active: true }, 'Z', 'X', 'C', 'V', 'B', 'N', 'M', { action: 'backspace', label: '⌫' }],
-    [{ action: 'symbols', label: '?123' }, ',', { action: 'space', label: 'English' }, '.', { action: 'enter', label: '↵' }]
-  ],
-  symbols: [
-    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-    ['@', '#', '$', '%', '&', '-', '+', '(', ')'],
-    [{ action: 'alt_symbols', label: '=\\<' }, '*', '"', '\'', ':', ';', '!', '?', { action: 'backspace', label: '⌫' }],
-    [{ action: 'abc', label: 'ABC' }, ',', { action: 'space', label: 'English' }, '.', { action: 'enter', label: '↵' }]
-  ],
-  alt_symbols: [
-    ['~', '`', '|', '•', '√', 'π', '÷', '×', '§', 'Δ'],
-    ['£', '€', '¥', '¢', '^', '°', '=', '{', '}'],
-    [{ action: 'symbols', label: '?123' }, '\\', '<', '>', '[', ']', '_', '—', { action: 'backspace', label: '⌫' }],
-    [{ action: 'abc', label: 'ABC' }, ',', { action: 'space', label: 'English' }, '.', { action: 'enter', label: '↵' }]
-  ]
-};
-
+let currentLangKey = DEFAULT_LANGUAGE;
 let currentLayout = 'lower';
 let isShift = false;
 let isRecording = false;
@@ -49,7 +24,9 @@ const appContainer = document.querySelector('.voxkey-container');
 
 // Render Keyboard Rows
 function renderKeyboard() {
-  const rows = LAYOUTS[currentLayout];
+  const layouts = LANGUAGES[currentLangKey].layouts;
+  // Caseless scripts (Hebrew, Arabic) have no uppercase variant.
+  const rows = layouts[currentLayout] || layouts.lower;
   for (let i = 0; i < 4; i++) {
     const rowEl = document.getElementById(`row-${i + 1}`);
     rowEl.innerHTML = '';
@@ -74,8 +51,7 @@ function renderKeyboard() {
           keyEl.onclick = () => onActionClick('BACKSPACE');
         } else if (keyData.action === 'space') {
           keyEl.classList.add('key-space');
-          const langName = langSelect.options[langSelect.selectedIndex].text.split(' ')[0];
-          keyEl.textContent = langName;
+          keyEl.textContent = LANGUAGES[currentLangKey].name;
           keyEl.onclick = () => onActionClick('SPACE');
         } else if (keyData.action === 'enter') {
           keyEl.classList.add('key-enter');
@@ -117,6 +93,14 @@ function toggleShift() {
 
 function switchLayout(layoutName) {
   currentLayout = layoutName;
+  isShift = false;
+  renderKeyboard();
+}
+
+/** Shows the keyboard of another language and resets shift and symbol state. */
+function setKeyboardLanguage(langKey) {
+  currentLangKey = LANGUAGES[langKey] ? langKey : DEFAULT_LANGUAGE;
+  currentLayout = 'lower';
   isShift = false;
   renderKeyboard();
 }
@@ -195,7 +179,7 @@ function stopLevelLoop() {
 
 langSelect.onchange = (e) => {
   api.setLanguage(e.target.value);
-  renderKeyboard();
+  setKeyboardLanguage(e.target.value);
 };
 
 minimizeBtn.onclick = () => {
@@ -283,8 +267,8 @@ api.getInfo().then((info) => {
   if (appLogo) appLogo.title = `VoxKey v${info.version}`;
   if (info.language && [...langSelect.options].some((o) => o.value === info.language)) {
     langSelect.value = info.language;
-    renderKeyboard();
   }
+  setKeyboardLanguage(langSelect.value);
   applyVoiceMode(info.voiceMode);
 });
 
