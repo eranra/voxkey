@@ -3,6 +3,17 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.4] - 2026-11-28
+
+### Fixed
+
+- **The microphone permission prompt now actually appears.** macOS shows its prompts only on the
+  app's active window; VoxKey's keyboard window is deliberately not focusable (so clicks never
+  steal focus from the app being typed into), so every microphone request was denied silently
+  and VoxKey never appeared in the Microphone list. The window now takes focus briefly while
+  the system asks, and gives it back afterwards. The startup request also waits for the window
+  to exist instead of firing before it.
+
 ## [0.3.3] - 2026-11-28
 
 ### Fixed
