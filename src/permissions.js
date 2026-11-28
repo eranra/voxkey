@@ -67,12 +67,30 @@ function microphoneState(deps = {}) {
       try {
         const child = spawnFn('reg', ['query', key, '/v', 'Value'], { windowsHide: true });
         let out = '';
-        child.stdout.on('data', (d) => (out += d.toString()));
-        child.on('error', () => resolve('unknown'));
-        child.on('exit', (code) => {
+        if (child && child.stdout) {
+          child.stdout.on('data', (d) => (out += d.toString()));
+        }
+        let settled = false;
+        const finish = (code) => {
+          if (settled) return;
+          settled = true;
           if (code !== 0) return resolve('unknown');
-          resolve(/Allow/i.test(out) ? 'granted' : 'denied');
-        });
+          if (/Deny/i.test(out)) return resolve('denied');
+          if (/Allow/i.test(out)) return resolve('granted');
+          resolve('unknown');
+        };
+        if (child) {
+          child.on('error', () => {
+            if (!settled) {
+              settled = true;
+              resolve('unknown');
+            }
+          });
+          child.on('close', finish);
+          child.on('exit', finish);
+        } else {
+          resolve('unknown');
+        }
       } catch (e) {
         resolve('unknown');
       }

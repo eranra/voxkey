@@ -87,6 +87,28 @@ describe('microphoneState', () => {
     const state = await microphoneState({ platform: 'win32', spawn: fakeSpawn });
     assert.strictEqual(state, 'unknown');
   });
+
+  it('stays unknown (not denied) when registry output is empty or non-zero', async () => {
+    const fakeSpawn = () => ({
+      stdout: { on: (event, fn) => {} },
+      on: (event, fn) => {
+        if (event === 'close') fn(0);
+      }
+    });
+    const state = await microphoneState({ platform: 'win32', spawn: fakeSpawn });
+    assert.strictEqual(state, 'unknown');
+  });
+
+  it('handles child close event with Allow properly', async () => {
+    const fakeSpawn = () => ({
+      stdout: { on: (event, fn) => { if (event === 'data') fn(Buffer.from('    Value    REG_SZ    Allow')); } },
+      on: (event, fn) => {
+        if (event === 'close') fn(0);
+      }
+    });
+    const state = await microphoneState({ platform: 'win32', spawn: fakeSpawn });
+    assert.strictEqual(state, 'granted');
+  });
 });
 
 describe('canDictate', () => {

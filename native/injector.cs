@@ -59,7 +59,6 @@ namespace VoxKey
         const uint KEYEVENTF_KEYDOWN = 0x0000;
         const uint KEYEVENTF_KEYUP = 0x0002;
         const uint KEYEVENTF_UNICODE = 0x0004;
-        const int SW_HIDE = 0;
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
@@ -67,29 +66,12 @@ namespace VoxKey
         [DllImport("user32.dll")]
         static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
-        [DllImport("user32.dll")]
-        static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-        delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
-
-        [DllImport("user32.dll")]
-        static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
         public static void HideBridgeWindow()
         {
-            EnumWindows((hWnd, lParam) =>
-            {
-                StringBuilder sb = new StringBuilder(256);
-                GetWindowText(hWnd, sb, 256);
-                string title = sb.ToString();
-                if (title.IndexOf("VoxKey Speech Bridge", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    ShowWindow(hWnd, SW_HIDE);
-                }
-                return true;
-            }, IntPtr.Zero);
+            // The speech bridge Chrome process is launched off-screen at (-10000, -10000)
+            // with 1x1 dimensions (--window-position=-10000,-10000 --window-size=1,1).
+            // Do NOT hide or minimize it with SW_HIDE: in Chromium, hiding or minimizing
+            // sets document.hidden to true, which terminates Web Speech recognition with 'page-hidden'.
         }
 
         static void SendChar(char c)

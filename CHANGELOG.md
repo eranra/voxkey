@@ -3,6 +3,21 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.10] - 2026-11-28
+
+### Fixed
+
+- **Microphone permission and voice typing on Windows.** On Windows, desktop apps do not require
+  macOS-style TCC prompts. The registry check in `microphoneState` now safely handles process exit
+  and stream closing, only reporting `denied` if Windows microphone access is explicitly blocked in
+  Settings, and defaulting to `granted` otherwise.
+- **Prevented false mic permission warnings on toggle.** `handleToggleVoice` and startup permission
+  checks now only invoke macOS `askMicrophone()` on `darwin`, ensuring non-macOS platforms are not
+  falsely set to `denied` when `requestMicrophoneAccess` returns `unavailable`.
+- **Eliminated `page-hidden` error in speech bridge.** Removed `ShowWindow(SW_HIDE)` call on Windows
+  which was causing Chrome's `document.hidden` to become `true` and breaking Web Speech API recognition.
+  The speech bridge remains off-screen (`-10000, -10000`) and fully functional.
+
 ## [0.3.9] - 2026-11-28
 
 ### Fixed

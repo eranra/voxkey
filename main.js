@@ -167,7 +167,9 @@ function runPrimaryApp() {
   function scheduleStartupPermissionCheck() {
     setTimeout(async () => {
       const state = await refreshPermissions();
-      if (state && state.microphone === 'not-determined') await askMicrophone();
+      if (state && state.microphone === 'not-determined' && process.platform === 'darwin') {
+        await askMicrophone();
+      }
       if (state && (!state.typing || !canDictate(state.microphone))) {
         const timer = setInterval(async () => {
           const next = await refreshPermissions({ openPanes: false });
@@ -204,8 +206,12 @@ function runPrimaryApp() {
         // granted or denied after the user answers. A result that is neither means macOS
         // refused to show the prompt at all: the user must switch VoxKey on in the settings
         // pane instead.
-        const askResult = await askMicrophone();
-        microphone = askResult === 'granted' ? 'granted' : 'denied';
+        if (process.platform === 'darwin') {
+          const askResult = await askMicrophone();
+          if (askResult === 'granted' || askResult === 'denied') {
+            microphone = askResult;
+          }
+        }
       }
       if (!canDictate(microphone)) {
         pushPermissions({ microphone });
