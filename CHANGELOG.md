@@ -3,6 +3,16 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.6] - 2026-11-28
+
+### Fixed
+
+- **The microphone dialog finally appears (macOS).** The app runs under the hardened runtime but
+  its entitlements were missing `com.apple.security.device.audio-input`; without it macOS denies
+  audio input silently — no permission dialog, no entry in the Microphone list, and dictation
+  receives silence no matter what is allowed in System Settings. With the entitlement, the first
+  dictation start shows the real "VoxKey would like to access the microphone" dialog.
+
 ## [0.3.5] - 2026-11-28
 
 ### Fixed
