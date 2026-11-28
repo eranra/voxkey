@@ -12,6 +12,7 @@ function buildTrayMenuModel({
   checkForUpdates = true,
   voiceMode = 'toggle',
   voiceShortcut = 'f8',
+  startWithSystem = false,
   platform = process.platform
 } = {}) {
   const separator = { type: 'separator' };
@@ -65,6 +66,7 @@ function buildTrayMenuModel({
     { label: 'About VoxKey', command: 'about' },
     { label: 'Check for Updates…', command: 'checkUpdates' },
     { label: 'Check for Updates Automatically', type: 'checkbox', checked: checkForUpdates, command: 'toggleAutoUpdate' },
+    { label: 'Start VoxKey When I Sign In', type: 'checkbox', checked: startWithSystem, command: 'toggleStartWithSystem' },
     separator,
     { label: 'Quit VoxKey', command: 'quit' }
   ];

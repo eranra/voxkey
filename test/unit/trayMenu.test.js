@@ -8,7 +8,15 @@ describe('tray menu', () => {
     const model = buildTrayMenuModel({ version: '1.2.3' });
     assert.deepStrictEqual(model[0], { label: 'VoxKey v1.2.3', enabled: false });
     const commands = model.filter((i) => i.command).map((i) => i.command);
-    assert.deepStrictEqual(commands, ['toggleKeyboard', 'toggleVoice', 'about', 'checkUpdates', 'toggleAutoUpdate', 'quit']);
+    assert.deepStrictEqual(commands, [
+      'toggleKeyboard',
+      'toggleVoice',
+      'about',
+      'checkUpdates',
+      'toggleAutoUpdate',
+      'toggleStartWithSystem',
+      'quit'
+    ]);
   });
 
   it('shows an available update first', () => {
@@ -63,6 +71,18 @@ describe('tray menu', () => {
     // The right-side modifier shortcuts are macOS only.
     const win = buildTrayMenuModel({ platform: 'win32' }).find((i) => i.label === 'Voice Shortcut').submenu;
     assert.ok(win.every((i) => !i.command.includes('rightOption') && !i.command.includes('rightCommand')));
+  });
+
+  it('offers start-with-system as a checkbox that follows the setting', () => {
+    const find = (m) => m.find((i) => i.command === 'toggleStartWithSystem');
+    const off = find(buildTrayMenuModel({ startWithSystem: false, platform: 'darwin' }));
+    assert.strictEqual(off.checked, false);
+    assert.strictEqual(off.type, 'checkbox');
+    const on = find(buildTrayMenuModel({ startWithSystem: true, platform: 'win32' }));
+    assert.strictEqual(on.checked, true);
+    // The default is off, on every platform.
+    assert.strictEqual(find(buildTrayMenuModel({ platform: 'darwin' })).checked, false);
+    assert.strictEqual(find(buildTrayMenuModel({ platform: 'win32' })).checked, false);
   });
 
   it('the toggle item names the configured shortcut', () => {
