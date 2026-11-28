@@ -3,6 +3,17 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-11-28
+
+### Fixed
+
+- **macOS: the Accessibility guidance now opens the right pane on every macOS version.** Newer
+  releases renamed and reorganized the privacy panes, so the hard-coded link landed where the
+  setting could not be found. VoxKey now asks macOS itself to open the pane for the current
+  build. Also note: an allowed VoxKey row from an earlier install does not help a newer one
+  (unsigned builds change identity on every install) — the warning bar and the pane stay until
+  the current build is allowed.
+
 ## [0.3.1] - 2026-11-28
 
 ### Added
