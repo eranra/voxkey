@@ -3,7 +3,10 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-28
+
+The multi-language release. Everything below, including the changes listed under 0.2.0, ships in
+this version; 0.2.0 was never published on its own.
 
 ### Added
 
