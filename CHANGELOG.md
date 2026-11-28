@@ -3,6 +3,15 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.5] - 2026-11-28
+
+### Fixed
+
+- **The permission warning clears by itself once access is granted.** Before, the "Open
+  Settings" warning stayed in the keyboard until the app was restarted, even after the switch
+  in System Settings was flipped. While a permission is missing it is now re-checked every
+  three seconds.
+
 ## [0.3.4] - 2026-11-28
 
 ### Fixed
