@@ -30,6 +30,10 @@ publish:
     releaseType: draft
 artifactName: VoxKey-${version}-${arch}.${ext}
 
+# No native node modules ship with the app (the Windows helper is a prebuilt exe), so the arch
+# rebuild step is unnecessary — and it breaks under npm's install-scripts policy
+# ("--allow-scripts is not allowed in project-scoped installs").
+npmRebuild: false
 mac:
   category: public.app-category.productivity
   target:
