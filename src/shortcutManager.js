@@ -3,9 +3,12 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const { PATHS, unpackedPath } = require('./config');
 
-/** The helper binary that reports key presses and releases (macOS only). It sits next to the
- *  Windows injector, outside the app.asar archive, so it can be spawned directly. */
-const KEYSTATE_HELPER = unpackedPath(path.join(PATHS.root, 'bin', 'keystate-macos'));
+/** The helper binary that reports key presses and releases. It sits next to the Windows
+ *  injector, outside the app.asar archive, so it can be spawned directly. One per system. */
+const KEYSTATE_HELPERS = {
+  darwin: unpackedPath(path.join(PATHS.root, 'bin', 'keystate-macos')),
+  win32: unpackedPath(path.join(PATHS.root, 'bin', 'keystate-windows.exe'))
+};
 
 /**
  * The shortcuts a user can pick, per platform.
@@ -19,7 +22,9 @@ const SHORTCUTS = {
   f6: { label: 'F6', kind: 'accelerator', accelerator: 'F6', keyCode: 'f6' },
   ctrlShiftSpace: { label: 'Ctrl+Shift+Space', kind: 'accelerator', accelerator: 'CommandOrControl+Shift+Space' },
   rightOption: { label: 'Right Option (hold)', kind: 'polled', keyCode: 'rightoption', platform: 'darwin' },
-  rightCommand: { label: 'Right Command (hold)', kind: 'polled', keyCode: 'rightcommand', platform: 'darwin' }
+  rightCommand: { label: 'Right Command (hold)', kind: 'polled', keyCode: 'rightcommand', platform: 'darwin' },
+  rightAlt: { label: 'Right Alt (hold)', kind: 'polled', keyCode: 'rightalt', platform: 'win32' },
+  rightControl: { label: 'Right Ctrl (hold)', kind: 'polled', keyCode: 'rightcontrol', platform: 'win32' }
 };
 
 /** The shortcuts offered in the menu, in order. */
@@ -61,9 +66,14 @@ class ShortcutManager {
     this.reapply();
   }
 
+  /** The helper binary for this system, or null where none exists. */
+  helperPath() {
+    return KEYSTATE_HELPERS[this.platform] || null;
+  }
+
   /** True when the key-state helper must run for the current shortcut and mode. */
   needsHelper() {
-    if (this.platform !== 'darwin') return false;
+    if (!this.helperPath()) return false;
     const def = SHORTCUTS[this.shortcut];
     return def.kind === 'polled' || this.mode === 'hold';
   }
@@ -108,7 +118,8 @@ class ShortcutManager {
 
   startHelper() {
     if (this.helper || this.isStopping) return;
-    if (!this.fileExists(KEYSTATE_HELPER)) {
+    const helperPath = this.helperPath();
+    if (!helperPath || !this.fileExists(helperPath)) {
       console.warn('[ShortcutManager] Key-state helper not found; the shortcut cannot detect holding.');
       // Fall back to a plain global shortcut, so activation still works (without hold).
       const def = SHORTCUTS[this.shortcut];
@@ -116,7 +127,11 @@ class ShortcutManager {
       return;
     }
     try {
-      const child = this.spawn(KEYSTATE_HELPER, []);
+      // On Windows the watched shortcut key is also swallowed (--suppress), so it does not
+      // reach other applications; the macOS helper is a passive state poller.
+      const def = SHORTCUTS[this.shortcut];
+      const args = this.platform === 'win32' && def.keyCode ? ['--suppress', def.keyCode] : [];
+      const child = this.spawn(helperPath, args);
       this.helper = child;
       let buffer = '';
       child.stdout.on('data', (chunk) => {
@@ -168,4 +183,4 @@ class ShortcutManager {
   }
 }
 
-module.exports = { KEYSTATE_HELPER, SHORTCUTS, ShortcutManager, shortcutChoices };
+module.exports = { KEYSTATE_HELPERS, SHORTCUTS, ShortcutManager, shortcutChoices };

@@ -25,6 +25,7 @@ const { isAllowedLink, updateMenuLabel } = require('./src/update');
 const { requestMicrophoneAccess } = require('./src/micPermission');
 const { askWithFocusedWindow, canDictate, canType, microphoneState, openPermissionSettings } = require('./src/permissions');
 const { ShortcutManager } = require('./src/shortcutManager');
+const { applyAutoStart } = require('./src/autoStart');
 
 const instanceMgr = new InstanceManager();
 
@@ -112,7 +113,8 @@ function runPrimaryApp() {
       updateLabel: updateMenuLabel(updater.state),
       checkForUpdates: store.get().checkForUpdates,
       voiceMode: store.get().voiceMode,
-      voiceShortcut: store.get().voiceShortcut
+      voiceShortcut: store.get().voiceShortcut,
+      startWithSystem: store.get().startWithSystem
     });
   }
 
@@ -286,6 +288,14 @@ function runPrimaryApp() {
         store.update({ checkForUpdates: !store.get().checkForUpdates });
         refreshTray();
         break;
+      case 'toggleStartWithSystem': {
+        const enabled = !store.get().startWithSystem;
+        store.update({ startWithSystem: enabled });
+        applyAutoStart(app, enabled);
+        console.log(`[VoxKey Engine] Start with system: ${enabled ? 'on' : 'off'}`);
+        refreshTray();
+        break;
+      }
       case 'setVoiceModeToggle':
       case 'setVoiceModeUntilSilence':
       case 'setVoiceModeHold': {
@@ -364,7 +374,11 @@ function runPrimaryApp() {
     const registeredCombo =
       store.get().voiceShortcut === 'ctrlShiftSpace' || globalShortcut.register('CommandOrControl+Shift+Space', () => handleToggleVoice());
 
-    // 5. Update checks (packaged builds only).
+    // 5. Follow the saved start-with-system setting (the app itself always starts idle:
+    //    dictation never begins on its own, and every other setting is restored from disk).
+    applyAutoStart(app, store.get().startWithSystem);
+
+    // 6. Update checks (packaged builds only).
     updater.start();
 
     console.log(

@@ -122,7 +122,11 @@ If keys do nothing on macOS, one of the first two permissions is missing.
   cannot start. Close that program. VoxKey listens only on `127.0.0.1`, so the port is not reachable from
   other computers.
 - **F8 does not work:** another app has registered F8 as a global shortcut. Use **Ctrl/Cmd + Shift + Space**, or pick another shortcut in the tray menu.
-- **Hold-to-talk (macOS):** choose *Voice Typing Mode → Hold shortcut* in the tray menu, and optionally *Voice Shortcut → Right Option*. Listening follows the key: press and hold to dictate, release to stop.
+- **Hold-to-talk:** choose *Voice Typing Mode → Hold shortcut* in the tray menu, and a holdable
+  shortcut (Right Option / Right Command on macOS, Right Alt / Right Ctrl on Windows). Listening
+  follows the key: press and hold to dictate, release to stop.
+- **Start with the system:** *Start VoxKey When I Sign In* in the tray menu (macOS and Windows).
+  VoxKey always starts idle — dictation never begins on its own.
 
 ## 🛠️ Build from source
 

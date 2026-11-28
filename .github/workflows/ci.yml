@@ -26,6 +26,12 @@ jobs:
       # Compile the Windows keystroke helper from source, so the code in native/ is known to build.
       - if: runner.os == 'Windows'
         run: npm run build:injector
+      - name: Build the Windows key-state helper from source
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p bin
+          "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe" /target:exe /out:bin\\keystate-windows.exe native\\keystate.cs
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:

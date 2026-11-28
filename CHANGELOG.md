@@ -3,6 +3,21 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Hold-to-talk and the right-modifier shortcuts now work on Windows too.** A small native
+  key watcher (`native/keystate.cs`, built into `bin/keystate-windows.exe` by CI) reports key
+  presses and releases through the same protocol as the macOS helper — a low-level keyboard
+  hook, which needs no permission on Windows. The tray offers **Right Alt (hold)** and
+  **Right Ctrl (hold)** there, and the watched shortcut key is swallowed so it does not reach
+  other applications (a released Alt would otherwise open menu bars).
+- **Start VoxKey when you sign in** (tray menu, both systems): macOS login items and the
+  Windows registry, through Electron's own login-item support. The app always starts idle —
+  dictation never begins on its own — and every other setting (language, microphone mode,
+  shortcut, this one) is restored from disk across reboots and restarts.
+
 ## [0.4.0] - 2026-11-28
 
 ### Added

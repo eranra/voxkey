@@ -28,6 +28,14 @@ describe('settings', () => {
     }
   });
 
+  it('keeps the start-with-system flag, defaulting to off', () => {
+    assert.strictEqual(normalizeSettings({ startWithSystem: true }).startWithSystem, true);
+    assert.strictEqual(normalizeSettings({ startWithSystem: false }).startWithSystem, false);
+    for (const bad of ['yes', 1, null, {}]) {
+      assert.strictEqual(normalizeSettings({ startWithSystem: bad }).startWithSystem, false, String(bad));
+    }
+  });
+
   it('keeps a valid voice shortcut and replaces anything else with the default', () => {
     assert.strictEqual(normalizeSettings({ voiceShortcut: 'rightOption' }).voiceShortcut, 'rightOption');
     assert.strictEqual(normalizeSettings({ voiceShortcut: 'f6' }).voiceShortcut, 'f6');

@@ -42,9 +42,14 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           [[ "${GITHUB_REF_NAME}" == "v${version}" ]] || { echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}"; exit 1; }
-      # Build the Windows helper from source, so the released binary matches native/injector.cs.
+      # Build the Windows helpers from source, so the released binaries match native/*.cs.
       - if: runner.os == 'Windows'
         run: npm run build:injector
+      - if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p bin
+          "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe" /target:exe /out:bin\\keystate-windows.exe native\\keystate.cs
       # Build the macOS key-state helper, for hold-to-talk and modifier shortcuts.
       - if: runner.os == 'macOS'
         run: npm run build:keyhelper

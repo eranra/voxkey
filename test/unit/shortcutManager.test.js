@@ -13,7 +13,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
   }
   return originalLoad(request, parent, isMain);
 };
-const { SHORTCUTS, ShortcutManager, shortcutChoices, KEYSTATE_HELPER } = require('../../src/shortcutManager');
+const { SHORTCUTS, ShortcutManager, shortcutChoices, KEYSTATE_HELPERS } = require('../../src/shortcutManager');
 Module._load = originalLoad;
 
 function fakeGlobalShortcut() {
@@ -141,10 +141,46 @@ describe('ShortcutManager', () => {
     assert.deepStrictEqual([...gs.registered.keys()], ['F8'], 'hold degrades to press-to-talk');
   });
 
-  it('windows never runs the helper', () => {
-    const { mgr, helpers } = makeManager({ platform: 'win32' });
+  it('windows runs the key-state helper for hold mode, with the shortcut suppressed', () => {
+    const spawns = [];
+    const gs = fakeGlobalShortcut();
+    const mgr = new ShortcutManager({
+      globalShortcut: gs,
+      spawn: (cmd, args) => {
+        const child = fakeHelper();
+        spawns.push({ cmd, args, child });
+        return child;
+      },
+      platform: 'win32',
+      fileExists: () => true
+    });
+    const events = [];
+    mgr.onActivate = () => events.push('down');
+    mgr.onRelease = () => events.push('up');
     mgr.configure('f8', 'hold');
-    assert.strictEqual(helpers.length, 0, 'no helper on Windows');
+    assert.strictEqual(gs.registered.size, 0);
+    assert.strictEqual(spawns.length, 1);
+    assert.strictEqual(spawns[0].cmd, KEYSTATE_HELPERS.win32, 'the Windows helper binary');
+    assert.deepStrictEqual(spawns[0].args, ['--suppress', 'f8'], 'the shortcut key does not reach other apps');
+    spawns[0].child.stdout.emit('down f8');
+    spawns[0].child.stdout.emit('up f8');
+    assert.deepStrictEqual(events, ['down', 'up']);
+  });
+
+  it('windows offers Right Alt as the hold shortcut, macOS does not', () => {
+    const { mgr, helpers } = makeManager({ platform: 'win32' });
+    mgr.onActivate = () => {};
+    mgr.configure('rightAlt', 'hold');
+    assert.strictEqual(helpers.length, 1);
+    const mac = shortcutChoices('darwin').map((c) => c.key);
+    assert.ok(!mac.includes('rightAlt'));
+    assert.ok(shortcutChoices('win32').map((c) => c.key).includes('rightAlt'));
+  });
+
+  it('a platform without a helper never runs one', () => {
+    const { mgr, helpers } = makeManager({ platform: 'linux' });
+    mgr.configure('f8', 'hold');
+    assert.strictEqual(helpers.length, 0);
   });
 
   it('stop() cleans everything up', () => {
@@ -166,10 +202,13 @@ describe('shortcutChoices', () => {
 });
 
 describe('keystate helper source (wiring)', () => {
-  it('watches the keys that ShortcutManager knows about', () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'keystate.swift'), 'utf8');
+  it('watches the keys that ShortcutManager knows about, on both systems', () => {
+    const mac = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'keystate.swift'), 'utf8');
+    const win = fs.readFileSync(path.join(__dirname, '..', '..', 'native', 'keystate.cs'), 'utf8');
     for (const def of Object.values(SHORTCUTS)) {
-      if (def.keyCode) assert.ok(source.includes(`"${def.keyCode}"`), `${def.keyCode} is watched`);
+      if (!def.keyCode) continue;
+      const source = def.platform === 'win32' ? win : mac;
+      assert.ok(source.includes(`"${def.keyCode}"`), `${def.keyCode} is watched on ${def.platform || 'darwin'}`);
     }
   });
 

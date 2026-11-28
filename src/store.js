@@ -16,7 +16,9 @@ const DEFAULT_SETTINGS = Object.freeze({
    *  by itself, 'hold' listens while the shortcut is held (macOS). */
   voiceMode: 'toggle',
   /** The voice activation shortcut; a key of SHORTCUTS in src/shortcutManager.js. */
-  voiceShortcut: 'f8'
+  voiceShortcut: 'f8',
+  /** Start VoxKey when the user signs in to the system. */
+  startWithSystem: false
 });
 
 /** The microphone behaviors. */
@@ -32,7 +34,8 @@ function normalizeSettings(raw) {
       ? value.language
       : DEFAULT_SETTINGS.language,
     voiceMode: VOICE_MODES.includes(value.voiceMode) ? value.voiceMode : DEFAULT_SETTINGS.voiceMode,
-    voiceShortcut: SHORTCUT_KEYS.includes(value.voiceShortcut) ? value.voiceShortcut : DEFAULT_SETTINGS.voiceShortcut
+    voiceShortcut: SHORTCUT_KEYS.includes(value.voiceShortcut) ? value.voiceShortcut : DEFAULT_SETTINGS.voiceShortcut,
+    startWithSystem: typeof value.startWithSystem === 'boolean' ? value.startWithSystem : DEFAULT_SETTINGS.startWithSystem
   };
 }
 
