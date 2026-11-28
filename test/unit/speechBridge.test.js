@@ -10,8 +10,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const vm = require('vm');
+const { EventEmitter } = require('events');
 const { WebSocket } = require('ws');
-const { SpeechServer, bridgeArgs, removeStaleBridgeProfiles, START_TIMEOUT_MS, voiceErrorText } = require('../../src/speechServer');
+const { SpeechServer, bridgeArgs, removeStaleBridgeProfiles, START_TIMEOUT_MS, BRIDGE_RELAUNCH_MS, voiceErrorText } = require('../../src/speechServer');
 
 // ---- A sandbox that runs the real stt.html script -------------------------------------------------
 
@@ -595,8 +596,40 @@ describe('voice errors', () => {
     }
   });
 
-  it('stale bridge profiles are cleaned up, fresh ones are kept', () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'voxkey-clean-test-'));
+  it('a crashed speech bridge relaunches by itself', async () => {
+    // Background: a Chrome crash (observed 2026-11-28) left voice typing dead until the whole
+    // app was restarted. The server now replaces a crashed bridge on its own.
+    const children = [];
+    const server = new SpeechServer({
+      port: 1,
+      chromePaths: ['/chrome'],
+      fileExists: () => true,
+      spawn: () => {
+        const child = new EventEmitter();
+        child.kill = () => child.emit('exit', null);
+        children.push(child);
+        return child;
+      }
+    });
+    server.launchChromeBridge();
+    assert.strictEqual(children.length, 1);
+    children[0].emit('exit', 1); // the bridge crashes
+    await new Promise((r) => setTimeout(r, BRIDGE_RELAUNCH_MS + 100));
+    assert.strictEqual(children.length, 2, 'a replacement bridge was started');
+
+    // A restart initiated by the server must not schedule a second one on top.
+    server.restartBridge();
+    await new Promise((r) => setTimeout(r, BRIDGE_RELAUNCH_MS + 100));
+    assert.strictEqual(children.length, 3, 'restartBridge started exactly one bridge');
+
+    // Stopping the server stops the relaunching.
+    server.stop();
+    children[2].emit('exit', 1);
+    await new Promise((r) => setTimeout(r, BRIDGE_RELAUNCH_MS + 100));
+    assert.strictEqual(children.length, 3, 'no relaunch after stop');
+  });
+
+  it('stale bridge profiles are cleaned up, fresh ones are kept', () => {    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'voxkey-clean-test-'));
     try {
       const day = 24 * 60 * 60 * 1000;
       const stale = path.join(tmp, 'voxkey-speech-stale');
