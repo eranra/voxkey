@@ -189,6 +189,7 @@ function loadRendererPage() {
 
   const ids = [
     'mic-btn', 'transcript-box', 'transcript-placeholder', 'transcript-interim', 'lang-select',
+    'lang-btn', 'lang-btn-text', 'lang-menu', 'lang-dropdown-wrapper',
     'minimize-btn', 'compact-icon', 'hide-btn', 'close-btn', 'keyboard-body',
     'row-1', 'row-2', 'row-3', 'row-4', 'app-logo'
   ];

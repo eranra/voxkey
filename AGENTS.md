@@ -49,3 +49,11 @@ collide.
   change.
 - No `Co-Authored-By`, `Generated with`, or any other AI attribution in
   commits, pull requests, or docs. All work is authored by Eran Raichstein.
+
+## Cross-Platform Parity & Regression Prevention (Windows & macOS)
+
+- **Strict cross-platform parity**: VoxKey is cross-platform and must function identically on both Windows and macOS. Never implement or alter a feature on one platform that causes regressions or breaks functionality on the other.
+- **Window focus constraints (`focusable: false`)**: The primary on-screen keyboard window operates with `focusable: false` so that clicks on keys and controls never steal keyboard focus from the user's active application.
+  - Native OS popup menus (such as standard HTML `<select>` popups on Windows) do not open in non-focusable windows.
+  - Controls that show dropdown menus, dialogs, or pickers must use custom in-DOM components (e.g., the custom language combobox) so clicks and menu interactions register cleanly within the DOM without requiring OS window focus.
+- **Robust test suite**: Always write comprehensive automated unit and integration tests for every new UI interaction or platform bridge. Before committing or opening a PR, always run `npm run check` (all syntax checks, unit tests, and integration tests) to ensure zero regressions across platforms.

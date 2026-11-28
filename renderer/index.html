@@ -22,18 +22,27 @@
       </div>
 
       <div class="header-right">
-        <!-- Language selector -->
-        <select id="lang-select" class="lang-dropdown">
-          <option value="en-US" selected>EN (US)</option>
-          <option value="en-GB">EN (UK)</option>
-          <option value="es-ES">ES</option>
-          <option value="fr-FR">FR</option>
-          <option value="de-DE">DE</option>
-          <option value="he-IL">HE</option>
-          <option value="ar-SA">AR</option>
-          <option value="ru-RU">RU</option>
-          <option value="zh-CN">ZH</option>
-        </select>
+        <!-- Language selector (custom in-DOM dropdown for focusable: false on Windows and macOS) -->
+        <div class="lang-dropdown-wrapper" id="lang-dropdown-wrapper">
+          <button id="lang-btn" class="lang-dropdown-btn" type="button" aria-haspopup="listbox" aria-expanded="false" title="Change Language">
+            <span id="lang-btn-text">EN (US)</span>
+            <svg class="lang-chevron" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+              <path fill="currentColor" d="M7 10l5 5 5-5z"/>
+            </svg>
+          </button>
+          <div id="lang-menu" class="lang-menu" role="listbox" hidden></div>
+          <select id="lang-select" class="lang-dropdown" style="display:none;" aria-hidden="true" tabindex="-1">
+            <option value="en-US" selected>EN (US)</option>
+            <option value="en-GB">EN (UK)</option>
+            <option value="es-ES">ES</option>
+            <option value="fr-FR">FR</option>
+            <option value="de-DE">DE</option>
+            <option value="he-IL">HE</option>
+            <option value="ar-SA">AR</option>
+            <option value="ru-RU">RU</option>
+            <option value="zh-CN">ZH</option>
+          </select>
+        </div>
 
         <!-- Voice Typing Button -->
         <button id="mic-btn" class="mic-button" title="Voice Typing (F8)" aria-label="Voice typing">

@@ -15,6 +15,9 @@ const transcriptBox = document.getElementById('transcript-box');
 const transcriptPlaceholder = document.getElementById('transcript-placeholder');
 const transcriptInterim = document.getElementById('transcript-interim');
 const langSelect = document.getElementById('lang-select');
+const langBtn = document.getElementById('lang-btn');
+const langBtnText = document.getElementById('lang-btn-text');
+const langMenu = document.getElementById('lang-menu');
 const minimizeBtn = document.getElementById('minimize-btn');
 const compactIcon = document.getElementById('compact-icon');
 const hideBtn = document.getElementById('hide-btn');
@@ -211,10 +214,110 @@ function stopLevelLoop() {
   micWave.style.opacity = '1';
 }
 
-langSelect.onchange = (e) => {
-  api.setLanguage(e.target.value);
-  setKeyboardLanguage(e.target.value);
-};
+// Custom Language Dropdown Management (supports focusable: false on Windows and Mac)
+function updateLangButtonText(langKey) {
+  if (!langBtnText) return;
+  if (langSelect && langSelect.options && langSelect.options.length) {
+    const selectedOpt = [...langSelect.options].find((o) => o.value === langKey);
+    langBtnText.textContent = selectedOpt ? selectedOpt.text : langKey;
+  } else if (LANGUAGES[langKey]) {
+    langBtnText.textContent = LANGUAGES[langKey].name;
+  } else {
+    langBtnText.textContent = langKey;
+  }
+}
+
+function populateLangMenu() {
+  if (!langMenu) return;
+  langMenu.innerHTML = '';
+  const options = langSelect && langSelect.options && langSelect.options.length
+    ? [...langSelect.options]
+    : Object.keys(LANGUAGES).map((key) => ({ value: key, text: key }));
+
+  options.forEach((opt) => {
+    const item = document.createElement('div');
+    item.className = 'lang-option' + (opt.value === currentLangKey ? ' selected' : '');
+    item.setAttribute('role', 'option');
+    item.setAttribute('data-value', opt.value);
+
+    const langMeta = LANGUAGES[opt.value];
+    const nativeName = langMeta ? langMeta.name : '';
+    item.innerHTML = `<span class="opt-label">${opt.text}</span><span class="opt-native">${nativeName}</span>`;
+
+    item.onclick = (e) => {
+      if (e && e.stopPropagation) e.stopPropagation();
+      selectLanguage(opt.value);
+      closeLangMenu();
+    };
+    langMenu.appendChild(item);
+  });
+}
+
+function selectLanguage(langKey) {
+  currentLangKey = LANGUAGES[langKey] ? langKey : DEFAULT_LANGUAGE;
+  if (langSelect) langSelect.value = currentLangKey;
+  updateLangButtonText(currentLangKey);
+  api.setLanguage(currentLangKey);
+  setKeyboardLanguage(currentLangKey);
+
+  if (langMenu && langMenu.querySelectorAll) {
+    const items = langMenu.querySelectorAll('.lang-option');
+    if (items) {
+      items.forEach((el) => {
+        if (el.classList && el.getAttribute) {
+          el.classList.toggle('selected', el.getAttribute('data-value') === currentLangKey);
+        }
+      });
+    }
+  }
+}
+
+function toggleLangMenu() {
+  if (!langMenu) return;
+  const isHidden = Boolean(langMenu.hidden);
+  if (isHidden) {
+    populateLangMenu();
+    langMenu.hidden = false;
+    if (langBtn) {
+      if (langBtn.classList) langBtn.classList.add('open');
+      langBtn.setAttribute('aria-expanded', 'true');
+    }
+  } else {
+    closeLangMenu();
+  }
+}
+
+function closeLangMenu() {
+  if (!langMenu) return;
+  langMenu.hidden = true;
+  if (langBtn) {
+    if (langBtn.classList) langBtn.classList.remove('open');
+    langBtn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+if (langBtn) {
+  langBtn.onclick = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    toggleLangMenu();
+  };
+}
+
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('click', (e) => {
+    if (langMenu && !langMenu.hidden) {
+      if (!e.target || !e.target.closest || !e.target.closest('#lang-dropdown-wrapper')) {
+        closeLangMenu();
+      }
+    }
+  });
+}
+
+if (langSelect) {
+  langSelect.onchange = (e) => {
+    selectLanguage(e.target.value);
+  };
+}
 
 minimizeBtn.onclick = () => {
   isCollapsed = !isCollapsed;
@@ -299,12 +402,17 @@ api.onVoiceError((message) => {
 api.getInfo().then((info) => {
   const appLogo = document.getElementById('app-logo');
   if (appLogo) appLogo.title = `VoxKey v${info.version}`;
-  if (info.language && [...langSelect.options].some((o) => o.value === info.language)) {
+  if (info.language && langSelect && langSelect.options && [...langSelect.options].some((o) => o.value === info.language)) {
     langSelect.value = info.language;
   }
-  setKeyboardLanguage(langSelect.value);
+  const initialLang = langSelect ? langSelect.value : DEFAULT_LANGUAGE;
+  updateLangButtonText(initialLang);
+  setKeyboardLanguage(initialLang);
   applyVoiceMode(info.voiceMode);
 });
+
+// Initial button label setup
+updateLangButtonText(currentLangKey);
 
 // Clicking the logo opens the About window.
 const appLogoEl = document.getElementById('app-logo');

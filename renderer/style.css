@@ -53,7 +53,8 @@ body {
   padding: 0 4px;
 }
 
-.voxkey-container.compact-mode .lang-dropdown {
+.voxkey-container.compact-mode .lang-dropdown,
+.voxkey-container.compact-mode .lang-dropdown-wrapper {
   display: none !important;
 }
 
@@ -158,6 +159,113 @@ body {
 
 .lang-dropdown:hover {
   background: #3c3f44;
+}
+
+/* Custom In-DOM Language Dropdown (supports focusable: false on Windows & Mac) */
+.lang-dropdown-wrapper {
+  position: relative;
+  -webkit-app-region: no-drag !important;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lang-dropdown-btn {
+  -webkit-app-region: no-drag !important;
+  background: #33353a;
+  color: #e3e3e3;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  font-size: 11px;
+  padding: 3px 8px;
+  outline: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.lang-dropdown-btn:hover {
+  background: #3c3f44;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.lang-dropdown-btn.open {
+  background: #44474c;
+  border-color: #8ab4f8;
+}
+
+.lang-chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.lang-dropdown-btn.open .lang-chevron {
+  transform: rotate(180deg);
+}
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: #25262c;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 10000;
+  min-width: 155px;
+  max-height: 240px;
+  overflow-y: auto;
+  -webkit-app-region: no-drag !important;
+  box-sizing: border-box;
+}
+
+.lang-menu[hidden] {
+  display: none !important;
+}
+
+.lang-option {
+  -webkit-app-region: no-drag !important;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #e3e3e3;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.1s, color 0.1s;
+}
+
+.lang-option:hover {
+  background: #383a42;
+  color: #ffffff;
+}
+
+.lang-option.selected {
+  background: #323d4e;
+  color: #8ab4f8;
+  font-weight: 500;
+}
+
+.lang-option .opt-native {
+  font-size: 11px;
+  color: #9aa0a6;
+}
+
+.lang-option.selected .opt-native {
+  color: #aecbfa;
 }
 
 /* Mic Button */
