@@ -35,8 +35,15 @@ function macTextPlan(text) {
   return { method: 'paste', script: 'tell application "System Events" to keystroke "v" using command down' };
 }
 
-/** Milliseconds to wait after a paste before the old clipboard text is put back. */
-const CLIPBOARD_RESTORE_MS = 300;
+/**
+ * Milliseconds to wait after a paste before the old clipboard text is put back. The target
+ * application processes the Cmd+V asynchronously; a busy application (browsers, Electron apps)
+ * can take well over a second, and a paste that is processed after the restore pastes the old
+ * clipboard content — or nothing. Hebrew, Arabic and other non-ASCII dictation goes through
+ * this paste path, so a short restore made those languages silently fail while English (typed
+ * as keystrokes) worked (observed 2026-11-28).
+ */
+const CLIPBOARD_RESTORE_MS = 1500;
 
 /**
  * AppleScript that reports every change of the frontmost application on stderr, forever.
@@ -74,6 +81,9 @@ class InjectorManager {
     this.appName = deps.appName || 'VoxKey';
     // The app the user was in before the keyboard window took the focus; typing goes there.
     this.targetApp = null;
+    // Injectable for tests: how long a pasted text stays on the clipboard before the
+    // previous content is restored.
+    this.clipboardRestoreMs = deps.clipboardRestoreMs || CLIPBOARD_RESTORE_MS;
     this.trackerProcess = null;
     this.isStopping = false;
     this.process = null;
@@ -212,7 +222,7 @@ class InjectorManager {
       const previous = clipboard.readText();
       clipboard.writeText(text);
       await this.osascript(this.withTargetApp(pasteScript));
-      await new Promise((r) => setTimeout(r, CLIPBOARD_RESTORE_MS));
+      await new Promise((r) => setTimeout(r, this.clipboardRestoreMs));
       // Only restore if nothing else changed the clipboard in the meantime.
       if (clipboard.readText() === text) clipboard.writeText(previous);
     });
